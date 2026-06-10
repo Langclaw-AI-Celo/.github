@@ -93,11 +93,17 @@ https://langclawcelo.vercel.app
    git status --short .github backend contracts frontend
    ```
 
-3. Capture the current short head before refreshing any public campaign
+3. Run the profile/doc guards from `backend/` before changing public claims:
+
+   ```bash
+   node --import tsx --test src/lib/docs/github-profile-docs.test.ts src/lib/docs/github-profile-readme.test.ts
+   ```
+
+4. Capture the current short head before refreshing any public campaign
    snapshot from this single-root checkout:
 
    ```bash
    git rev-parse --short HEAD
    ```
 
-4. Keep links pointed at the public `Langclaw-AI-Celo` repositories.
+5. Keep links pointed at the public `Langclaw-AI-Celo` repositories.
