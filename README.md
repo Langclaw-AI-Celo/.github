@@ -5,6 +5,11 @@ This repository owns the public GitHub organization profile for
 [`profile/README.md`](profile/README.md) and should stay aligned with the
 backend, frontend, and contracts folder docs.
 
+This local checkout is a single git root with `.github`, `backend`,
+`contracts`, and `frontend` tracked as folders. Keep the public profile links
+pointed at the `Langclaw-AI-Celo` repositories, but run local status and diff
+checks from the workspace root when preparing atomic commits.
+
 Current public app entrypoint:
 
 ```text
@@ -85,18 +90,13 @@ https://langclawcelo.vercel.app
 2. Confirm the profile still matches the folder READMEs:
 
    ```bash
-   git -C ../backend status --short
-   git -C ../contracts status --short
-   git -C ../frontend status --short
+   git status --short .github backend contracts frontend
    ```
 
-3. Capture the current short heads before refreshing any public campaign
-   snapshot:
+3. Capture the current short head before refreshing any public campaign
+   snapshot from this single-root checkout:
 
    ```bash
-   git -C ../backend rev-parse --short HEAD
-   git -C ../frontend rev-parse --short HEAD
-   git -C ../contracts rev-parse --short HEAD
    git rev-parse --short HEAD
    ```
 
