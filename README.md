@@ -6,10 +6,10 @@ This repository owns the public GitHub organization profile for
 backend, frontend, and contracts folder docs.
 
 This workspace keeps the public GitHub profile in the separate `org-profile`
-repo alongside sibling `backend`, `contracts`, and `frontend` repos. Keep the
-public profile links pointed at the `Langclaw-AI-Celo` repositories, but run
-local status and diff checks from the shared workspace root when preparing
-atomic commits.
+repo alongside sibling `backend`, `contracts`, and `frontend` repos under a
+single git root. Keep the public profile links pointed at the
+`Langclaw-AI-Celo` repositories, but run local status and diff checks from the
+shared workspace root when preparing atomic commits.
 
 Current public app entrypoint:
 
