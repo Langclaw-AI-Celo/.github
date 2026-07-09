@@ -17,6 +17,12 @@ Current public app entrypoint:
 https://langclawcelo.vercel.app
 ```
 
+Current public repository links:
+
+- Frontend: `https://github.com/Langclaw-AI-Celo/frontend`
+- Backend: `https://github.com/Langclaw-AI-Celo/backend`
+- Contracts: `https://github.com/Langclaw-AI-Celo/contracts`
+
 ## Source Of Truth
 
 | Area | Source |
