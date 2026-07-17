@@ -99,4 +99,4 @@ Maintainers may ask you to split a large pull request. Review feedback should
 produce new commits during review. Maintainers can clean the branch history
 when the contribution is ready to merge.
 
-By contributing, you agree to follow the organization community standards.
+By contributing, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
