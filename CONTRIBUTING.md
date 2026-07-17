@@ -22,8 +22,8 @@ you plan to change.
 
 1. Search existing issues and pull requests.
 2. Open an issue for a large feature or behavior change.
-3. Keep security reports private. Do not disclose suspected vulnerabilities in
-   a public issue.
+3. Keep security reports private. Follow [SECURITY.md](SECURITY.md), and do not
+   disclose suspected vulnerabilities in a public issue.
 4. Confirm that your proposal does not introduce live-funds trading or hidden
    custody behavior.
 
