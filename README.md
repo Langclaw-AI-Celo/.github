@@ -6,10 +6,10 @@ This repository owns the public GitHub organization profile for
 backend, frontend, and contracts folder docs.
 
 This workspace keeps the public GitHub profile in the separate `org-profile`
-repo alongside sibling `backend`, `contracts`, and `frontend` repos under a
-single git root. Keep the public profile links pointed at the
-`Langclaw-AI-Celo` repositories, but run local status and diff checks from the
-shared workspace root when preparing atomic commits.
+repository beside the `backend`, `contracts`, and `frontend` repositories.
+The shared parent directory is not a Git repository. Each child repository is
+a single git root. Keep public links pointed at `Langclaw-AI-Celo`, and run
+status or diff checks inside each repository.
 
 Current public app entrypoint:
 
@@ -94,10 +94,15 @@ Current public repository links:
    npm run check:celo-proof
    ```
 
-2. Confirm the profile still matches the folder READMEs:
+2. Confirm the profile still matches the sibling repository READMEs. Do not
+   run `git status --short org-profile backend contracts frontend` from the
+   shared parent. That command assumes the parent is a Git repository. Check
+   each repository explicitly:
 
    ```bash
-   git status --short org-profile backend contracts frontend
+   for repo in org-profile backend contracts frontend; do
+     git -C "$repo" status --short
+   done
    ```
 
 3. Run the profile/doc guards from `backend/` before changing public claims:
