@@ -1,0 +1,54 @@
+name: Support question
+description: Ask a focused usage, setup, or verification question.
+title: "[Support]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the organization support policy first. Never post private keys, access tokens, wallet signatures, cookies, or personal data.
+
+  - type: dropdown
+    id: repository
+    attributes:
+      label: Related repository
+      options:
+        - frontend
+        - backend
+        - contracts
+        - .github
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Ask one specific question and state the outcome you need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you tried
+      description: Include commands, documentation, and results.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Add the relevant URL, commit, operating system, wallet, browser, and tool versions.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets and personal data.
+          required: true
+        - label: I understand that maintainers cannot recover wallets or reverse Celo transactions.
+          required: true
+        - label: This question does not request investment advice.
+          required: true

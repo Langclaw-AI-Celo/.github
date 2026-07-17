@@ -1,0 +1,63 @@
+name: Feature request
+description: Propose a focused improvement to the Celo-first product.
+title: "[Feature]: "
+body:
+  - type: dropdown
+    id: repository
+    attributes:
+      label: Target repository
+      options:
+        - frontend
+        - backend
+        - contracts
+        - .github
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the specific user or maintainer problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Explain the behavior, inputs, outputs, and affected flow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and relevance
+      description: Add user evidence, Celo context, measurements, or links that support the proposal.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: List smaller options or current workarounds.
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: State the tests or acceptance checks that should prove completion.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: The proposal fits the Celo-first roadmap.
+          required: true
+        - label: The proposal does not add hidden custody or live-funds trading.
+          required: true
