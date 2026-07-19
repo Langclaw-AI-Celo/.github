@@ -53,6 +53,10 @@ issue_forms.each do |relative_path, form|
     errors << "Issue form #{relative_path} needs #{field}" unless value.is_a?(String) && !value.strip.empty?
   end
 
+  if form.key?("title") && !form["title"].is_a?(String)
+    errors << "Issue form #{relative_path} title must be a string"
+  end
+
   body = form["body"]
   unless body.is_a?(Array) && !body.empty?
     errors << "Issue form #{relative_path} needs a non-empty body"
