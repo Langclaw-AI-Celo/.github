@@ -16,6 +16,7 @@ REQUIRED_FILES = %w[
   .github/pull_request_template.md
   profile/README.md
 ].freeze
+ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
 
 errors = []
 
@@ -56,6 +57,108 @@ issue_forms.each do |relative_path, form|
   unless body.is_a?(Array) && !body.empty?
     errors << "Issue form #{relative_path} needs a non-empty body"
     next
+  end
+
+  has_response_field = body.any? do |field|
+    field.is_a?(Hash) &&
+      ISSUE_FORM_FIELD_TYPES.include?(field["type"]) &&
+      field["type"] != "markdown"
+  end
+  errors << "Issue form #{relative_path} needs at least one response field" unless has_response_field
+
+  body.each_with_index do |field, index|
+    field_number = index + 1
+
+    unless field.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} must be a mapping"
+      next
+    end
+
+    type = field["type"]
+    unless ISSUE_FORM_FIELD_TYPES.include?(type)
+      errors << "Issue form #{relative_path} body field #{field_number} has unsupported type #{type}"
+    end
+
+    if type != "markdown"
+      id = field["id"]
+      unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
+        errors << "Issue form #{relative_path} body field #{field_number} has invalid id #{id}"
+      end
+    end
+
+    attributes = field["attributes"]
+    unless attributes.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} attributes must be a mapping"
+      next
+    end
+
+    required_attribute = type == "markdown" ? "value" : "label"
+    attribute_value = attributes[required_attribute]
+    unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+
+    if type == "dropdown"
+      options = attributes["options"]
+      if !options.is_a?(Array) || options.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} dropdown needs options"
+      else
+        seen_options = {}
+        options.each_with_index do |option, option_index|
+          unless option.is_a?(String) && !option.strip.empty?
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown option #{option_index + 1} must be a non-empty string"
+            next
+          end
+
+          normalized_option = option.strip
+          if normalized_option.casecmp?("none")
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option none"
+          end
+          if seen_options[normalized_option]
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{normalized_option}"
+          end
+          seen_options[normalized_option] = true
+        end
+      end
+    elsif type == "checkboxes"
+      options = attributes["options"]
+      if !options.is_a?(Array) || options.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} checkboxes need options"
+      else
+        seen_labels = {}
+        options.each_with_index do |option, option_index|
+          unless option.is_a?(Hash)
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} must be a mapping"
+            next
+          end
+
+          label = option["label"]
+          unless label.is_a?(String) && !label.strip.empty?
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} needs label"
+          else
+            normalized_label = label.strip
+            if seen_labels[normalized_label]
+              errors << "Issue form #{relative_path} body field #{field_number} checkbox repeats label #{normalized_label}"
+            end
+            seen_labels[normalized_label] = true
+          end
+
+          required = option["required"]
+          if !required.nil? && ![true, false].include?(required)
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} required must be a boolean"
+          end
+        end
+      end
+    end
+
+    validations = field["validations"]
+    if !validations.nil? && !validations.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"
+    elsif validations.is_a?(Hash) &&
+        validations.key?("required") &&
+        ![true, false].include?(validations["required"])
+      errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+    end
   end
 
   field_ids = body.map do |field|
