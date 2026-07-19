@@ -16,6 +16,7 @@ REQUIRED_FILES = %w[
   .github/pull_request_template.md
   profile/README.md
 ].freeze
+ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
 
 errors = []
 
@@ -56,6 +57,44 @@ issue_forms.each do |relative_path, form|
   unless body.is_a?(Array) && !body.empty?
     errors << "Issue form #{relative_path} needs a non-empty body"
     next
+  end
+
+  body.each_with_index do |field, index|
+    field_number = index + 1
+
+    unless field.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} must be a mapping"
+      next
+    end
+
+    type = field["type"]
+    unless ISSUE_FORM_FIELD_TYPES.include?(type)
+      errors << "Issue form #{relative_path} body field #{field_number} has unsupported type #{type}"
+    end
+
+    if type != "markdown"
+      id = field["id"]
+      unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
+        errors << "Issue form #{relative_path} body field #{field_number} has invalid id #{id}"
+      end
+    end
+
+    attributes = field["attributes"]
+    unless attributes.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} attributes must be a mapping"
+      next
+    end
+
+    required_attribute = type == "markdown" ? "value" : "label"
+    attribute_value = attributes[required_attribute]
+    unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+
+    validations = field["validations"]
+    if !validations.nil? && !validations.is_a?(Hash)
+      errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"
+    end
   end
 
   field_ids = body.map do |field|
