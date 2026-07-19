@@ -91,6 +91,59 @@ issue_forms.each do |relative_path, form|
       errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
     end
 
+    if type == "dropdown"
+      options = attributes["options"]
+      if !options.is_a?(Array) || options.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} dropdown needs options"
+      else
+        seen_options = {}
+        options.each_with_index do |option, option_index|
+          unless option.is_a?(String) && !option.strip.empty?
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown option #{option_index + 1} must be a non-empty string"
+            next
+          end
+
+          normalized_option = option.strip
+          if normalized_option.casecmp?("none")
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option none"
+          end
+          if seen_options[normalized_option]
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{normalized_option}"
+          end
+          seen_options[normalized_option] = true
+        end
+      end
+    elsif type == "checkboxes"
+      options = attributes["options"]
+      if !options.is_a?(Array) || options.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} checkboxes need options"
+      else
+        seen_labels = {}
+        options.each_with_index do |option, option_index|
+          unless option.is_a?(Hash)
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} must be a mapping"
+            next
+          end
+
+          label = option["label"]
+          unless label.is_a?(String) && !label.strip.empty?
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} needs label"
+          else
+            normalized_label = label.strip
+            if seen_labels[normalized_label]
+              errors << "Issue form #{relative_path} body field #{field_number} checkbox repeats label #{normalized_label}"
+            end
+            seen_labels[normalized_label] = true
+          end
+
+          required = option["required"]
+          if !required.nil? && ![true, false].include?(required)
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} required must be a boolean"
+          end
+        end
+      end
+    end
+
     validations = field["validations"]
     if !validations.nil? && !validations.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"

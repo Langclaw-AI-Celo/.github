@@ -71,6 +71,52 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_issue_form_options
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/feature_request.yml").write(<<~YAML)
+        name: Feature request
+        description: Propose a focused improvement.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              options:
+                - true
+                - none
+                - frontend
+                - frontend
+          - type: checkboxes
+            id: checks
+            attributes:
+              label: Checks
+              options:
+                - invalid
+                - label: ""
+                  required: "true"
+                - label: Accept
+                - label: Accept
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown option 1 must be a non-empty string"
+      assert_includes stderr, "body field 1 dropdown uses reserved option none"
+      assert_includes stderr, "body field 1 dropdown repeats option frontend"
+      assert_includes stderr, "body field 2 checkbox option 1 must be a mapping"
+      assert_includes stderr, "body field 2 checkbox option 2 needs label"
+      assert_includes stderr, "body field 2 checkbox option 2 required must be a boolean"
+      assert_includes stderr, "body field 2 checkbox repeats label Accept"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
