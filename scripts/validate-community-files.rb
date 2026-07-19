@@ -4,13 +4,15 @@ require "pathname"
 require "uri"
 require "yaml"
 
-ROOT = Pathname(__dir__).join("..").expand_path
+DEFAULT_ROOT = Pathname(__dir__).join("..").expand_path
+ROOT = Pathname(ENV.fetch("COMMUNITY_FILES_ROOT", DEFAULT_ROOT.to_s)).expand_path
 REQUIRED_FILES = %w[
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
   README.md
   SECURITY.md
   SUPPORT.md
+  .github/ISSUE_TEMPLATE/config.yml
   .github/pull_request_template.md
   profile/README.md
 ].freeze
@@ -65,6 +67,48 @@ issue_forms.each do |relative_path, form|
   duplicates.each do |id|
     errors << "Issue form #{relative_path} repeats field id #{id}"
   end
+end
+
+issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
+
+if issue_template_config.is_a?(Hash)
+  blank_issues_enabled = issue_template_config["blank_issues_enabled"]
+  unless [true, false].include?(blank_issues_enabled)
+    errors << "Issue template config blank_issues_enabled must be a boolean"
+  end
+
+  contact_links = issue_template_config["contact_links"]
+  unless contact_links.is_a?(Array)
+    errors << "Issue template config contact_links must be a list"
+    contact_links = []
+  end
+
+  contact_links.each_with_index do |link, index|
+    unless link.is_a?(Hash)
+      errors << "Issue template contact link #{index + 1} must be a mapping"
+      next
+    end
+
+    %w[name about].each do |field|
+      value = link[field]
+      unless value.is_a?(String) && !value.strip.empty?
+        errors << "Issue template contact link #{index + 1} needs #{field}"
+      end
+    end
+
+    url = link["url"]
+    valid_url = begin
+      uri = URI.parse(url.to_s)
+      url.is_a?(String) && uri.scheme == "https" && !uri.host.to_s.empty?
+    rescue URI::InvalidURIError
+      false
+    end
+    unless valid_url
+      errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
+    end
+  end
+elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
+  errors << "Issue template config must be a mapping"
 end
 
 markdown_files = ROOT.glob("**/*.md").reject do |path|

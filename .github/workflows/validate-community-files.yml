@@ -21,5 +21,8 @@ jobs:
       - name: Validate community files
         run: ruby scripts/validate-community-files.rb
 
+      - name: Test community file validation
+        run: ruby scripts/validate-community-files.test.rb
+
       - name: Check whitespace
         run: git diff-tree --check --no-commit-id --root -r HEAD
