@@ -59,6 +59,13 @@ issue_forms.each do |relative_path, form|
     next
   end
 
+  has_response_field = body.any? do |field|
+    field.is_a?(Hash) &&
+      ISSUE_FORM_FIELD_TYPES.include?(field["type"]) &&
+      field["type"] != "markdown"
+  end
+  errors << "Issue form #{relative_path} needs at least one response field" unless has_response_field
+
   body.each_with_index do |field, index|
     field_number = index + 1
 
@@ -147,6 +154,10 @@ issue_forms.each do |relative_path, form|
     validations = field["validations"]
     if !validations.nil? && !validations.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"
+    elsif validations.is_a?(Hash) &&
+        validations.key?("required") &&
+        ![true, false].include?(validations["required"])
+      errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
     end
   end
 
