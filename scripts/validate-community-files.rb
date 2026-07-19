@@ -61,6 +61,23 @@ issue_forms.each do |relative_path, form|
     errors << "Issue form #{relative_path} type must be a string"
   end
 
+  %w[labels assignees].each do |field|
+    next unless form.key?(field)
+
+    value = form[field]
+    valid = if value.is_a?(String)
+      value.split(",", -1).all? { |item| !item.strip.empty? }
+    elsif value.is_a?(Array)
+      value.all? { |item| item.is_a?(String) && !item.strip.empty? }
+    else
+      false
+    end
+
+    unless valid
+      errors << "Issue form #{relative_path} #{field} must be a string or list of non-empty strings"
+    end
+  end
+
   body = form["body"]
   unless body.is_a?(Array) && !body.empty?
     errors << "Issue form #{relative_path} needs a non-empty body"
