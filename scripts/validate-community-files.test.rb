@@ -180,6 +180,33 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_non_string_issue_form_type
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        type:
+          - Bug
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml type must be a string"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
