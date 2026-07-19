@@ -260,6 +260,55 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_validates_issue_form_project_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      form_path = root.join(".github/ISSUE_TEMPLATE/bug_report.yml")
+      form_path.write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        projects: Langclaw-AI-Celo/1, Nant361/42
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+
+      form_path.write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        projects:
+          - Langclaw-AI-Celo/not-a-number
+          - invalid
+          - false
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml projects must use PROJECT-OWNER/PROJECT-NUMBER values"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

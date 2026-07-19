@@ -17,6 +17,7 @@ REQUIRED_FILES = %w[
   profile/README.md
 ].freeze
 ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
+ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
 
@@ -75,6 +76,22 @@ issue_forms.each do |relative_path, form|
 
     unless valid
       errors << "Issue form #{relative_path} #{field} must be a string or list of non-empty strings"
+    end
+  end
+
+  if form.key?("projects")
+    value = form["projects"]
+    projects = if value.is_a?(String)
+      value.split(",", -1)
+    elsif value.is_a?(Array)
+      value
+    end
+    valid = projects&.any? && projects.all? do |project|
+      project.is_a?(String) && project.strip.match?(ISSUE_FORM_PROJECT_PATTERN)
+    end
+
+    unless valid
+      errors << "Issue form #{relative_path} projects must use PROJECT-OWNER/PROJECT-NUMBER values"
     end
   end
 
