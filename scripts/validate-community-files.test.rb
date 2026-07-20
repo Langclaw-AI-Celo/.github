@@ -621,6 +621,27 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_issue_template_config_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links: []
+        unexpected: value
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template config has unpermitted key unexpected"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

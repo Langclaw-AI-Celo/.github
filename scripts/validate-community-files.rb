@@ -41,6 +41,7 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
   .csv .docx .gif .gz .jpeg .jpg .js .json .log .mov .mp4 .pdf .png .pptx
   .py .svg .tar.gz .ts .txt .webm .webp .xlsx .zip
 ].freeze
+ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -303,6 +304,10 @@ end
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
 
 if issue_template_config.is_a?(Hash)
+  (issue_template_config.keys - ISSUE_TEMPLATE_CONFIG_KEYS).each do |key|
+    errors << "Issue template config has unpermitted key #{key}"
+  end
+
   blank_issues_enabled = issue_template_config["blank_issues_enabled"]
   unless [true, false].include?(blank_issues_enabled)
     errors << "Issue template config blank_issues_enabled must be a boolean"
