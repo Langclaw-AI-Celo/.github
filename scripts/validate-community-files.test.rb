@@ -746,6 +746,44 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_colliding_issue_form_references
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Name?
+          - type: input
+            id: name
+            attributes:
+              label: Name???????
+          - type: textarea
+            attributes:
+              label: Wallet
+          - type: checkboxes
+            id: confirmations
+            attributes:
+              label: Confirmation
+              options:
+                - label: Wallet
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml repeats field reference name"
+      assert_includes stderr, "bug_report.yml repeats field reference wallet"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

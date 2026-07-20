@@ -45,6 +45,18 @@ ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
+def issue_form_reference(value)
+  return unless value.is_a?(String)
+
+  value
+    .unicode_normalize(:nfkd)
+    .encode("ASCII", invalid: :replace, undef: :replace, replace: "")
+    .downcase
+    .gsub(/[^a-z0-9_-]+/, "-")
+    .gsub(/-+/, "-")
+    .gsub(/\A-+|-+\z/, "")
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
@@ -310,6 +322,30 @@ issue_forms.each do |relative_path, form|
   duplicates = field_ids.group_by(&:itself).select { |_id, values| values.length > 1 }.keys
   duplicates.each do |id|
     errors << "Issue form #{relative_path} repeats field id #{id}"
+  end
+
+  field_references = body.flat_map do |field|
+    next [] unless field.is_a?(Hash) && field["type"] != "markdown"
+
+    attributes = field["attributes"]
+    next [] unless attributes.is_a?(Hash)
+
+    references = [field["id"] || issue_form_reference(attributes["label"])]
+    if field["type"] == "checkboxes" && attributes["options"].is_a?(Array)
+      references.concat(attributes["options"].map do |option|
+        next unless option.is_a?(Hash)
+
+        issue_form_reference(option["label"])
+      end.compact)
+    end
+    references.compact.reject(&:empty?)
+  end
+  duplicate_references = field_references
+    .group_by(&:itself)
+    .select { |_reference, values| values.length > 1 }
+    .keys
+  duplicate_references.each do |reference|
+    errors << "Issue form #{relative_path} repeats field reference #{reference}"
   end
 end
 
