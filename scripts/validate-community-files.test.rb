@@ -769,6 +769,30 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_issue_form_names_with_three_characters
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug
+        description: Report a reproducible problem.
+        body:
+          - type: textarea
+            attributes:
+              label: Reproduction steps
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml name must contain more than 3 characters"
+    end
+  end
+
   def test_rejects_colliding_issue_form_references
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

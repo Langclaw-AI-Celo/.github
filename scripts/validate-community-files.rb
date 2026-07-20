@@ -97,6 +97,11 @@ issue_forms.each do |relative_path, form|
     errors << "Issue form #{relative_path} needs #{field}" unless value.is_a?(String) && !value.strip.empty?
   end
 
+  name = form["name"]
+  if name.is_a?(String) && !name.strip.empty? && name.strip.length <= 3
+    errors << "Issue form #{relative_path} name must contain more than 3 characters"
+  end
+
   if form.key?("title")
     if !form["title"].is_a?(String)
       errors << "Issue form #{relative_path} title must be a string"
