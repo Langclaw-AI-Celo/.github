@@ -18,6 +18,7 @@ REQUIRED_FILES = %w[
 ].freeze
 ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
 ISSUE_FORM_TOP_LEVEL_KEYS = %w[assignees body description labels name projects title type].freeze
+ISSUE_FORM_BODY_KEYS = %w[attributes id type validations].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -119,6 +120,10 @@ issue_forms.each do |relative_path, form|
     unless field.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} must be a mapping"
       next
+    end
+
+    (field.keys - ISSUE_FORM_BODY_KEYS).each do |key|
+      errors << "Issue form #{relative_path} body field #{field_number} has unpermitted key #{key}"
     end
 
     type = field["type"]

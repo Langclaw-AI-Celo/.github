@@ -364,6 +364,32 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_issue_form_body_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            unexpected: value
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 has unpermitted key unexpected"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
