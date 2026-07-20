@@ -141,6 +141,11 @@ issue_forms.each do |relative_path, form|
     end
 
     if type == "dropdown"
+      multiple = attributes["multiple"]
+      if attributes.key?("multiple") && ![true, false].include?(multiple)
+        errors << "Issue form #{relative_path} body field #{field_number} dropdown multiple must be a boolean"
+      end
+
       options = attributes["options"]
       if !options.is_a?(Array) || options.empty?
         errors << "Issue form #{relative_path} body field #{field_number} dropdown needs options"

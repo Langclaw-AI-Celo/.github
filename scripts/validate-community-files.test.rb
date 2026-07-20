@@ -117,6 +117,35 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_non_boolean_dropdown_multiple
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              multiple: "true"
+              options:
+                - frontend
+                - backend
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown multiple must be a boolean"
+    end
+  end
+
   def test_rejects_markdown_only_forms_and_invalid_required_flags
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
