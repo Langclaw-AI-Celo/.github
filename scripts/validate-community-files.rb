@@ -17,6 +17,31 @@ REQUIRED_FILES = %w[
   profile/README.md
 ].freeze
 ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
+ISSUE_FORM_TOP_LEVEL_KEYS = %w[assignees body description labels name projects title type].freeze
+ISSUE_FORM_BODY_KEYS = %w[attributes id type validations].freeze
+ISSUE_FORM_ATTRIBUTE_KEYS = {
+  "checkboxes" => %w[description label options],
+  "dropdown" => %w[default description label multiple options],
+  "input" => %w[description label placeholder value],
+  "markdown" => %w[value],
+  "textarea" => %w[description label placeholder render value],
+  "upload" => %w[description label]
+}.freeze
+ISSUE_FORM_VALIDATION_KEYS = {
+  "checkboxes" => %w[required],
+  "dropdown" => %w[required],
+  "input" => %w[required],
+  "markdown" => [],
+  "textarea" => %w[required],
+  "upload" => %w[accept required]
+}.freeze
+ISSUE_FORM_CHECKBOX_OPTION_KEYS = %w[label required].freeze
+ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS = %w[description placeholder render value].freeze
+ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
+  .csv .docx .gif .gz .jpeg .jpg .js .json .log .mov .mp4 .pdf .png .pptx
+  .py .svg .tar.gz .ts .txt .webm .webp .xlsx .zip
+].freeze
+ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -47,6 +72,10 @@ issue_forms.each do |relative_path, form|
   unless form.is_a?(Hash)
     errors << "Issue form must be a mapping: #{relative_path}"
     next
+  end
+
+  (form.keys - ISSUE_FORM_TOP_LEVEL_KEYS).each do |key|
+    errors << "Issue form #{relative_path} has unpermitted top-level key #{key}"
   end
 
   %w[name description].each do |field|
@@ -116,12 +145,18 @@ issue_forms.each do |relative_path, form|
       next
     end
 
+    (field.keys - ISSUE_FORM_BODY_KEYS).each do |key|
+      errors << "Issue form #{relative_path} body field #{field_number} has unpermitted key #{key}"
+    end
+
     type = field["type"]
     unless ISSUE_FORM_FIELD_TYPES.include?(type)
       errors << "Issue form #{relative_path} body field #{field_number} has unsupported type #{type}"
     end
 
-    if type != "markdown"
+    if type == "markdown" && field.key?("id")
+      errors << "Issue form #{relative_path} body field #{field_number} markdown cannot define an id"
+    elsif type != "markdown"
       id = field["id"]
       unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
         errors << "Issue form #{relative_path} body field #{field_number} has invalid id #{id}"
@@ -134,10 +169,24 @@ issue_forms.each do |relative_path, form|
       next
     end
 
+    permitted_attributes = ISSUE_FORM_ATTRIBUTE_KEYS.fetch(type, [])
+    (attributes.keys - permitted_attributes).each do |key|
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} has unpermitted attribute #{key}"
+    end
+
     required_attribute = type == "markdown" ? "value" : "label"
     attribute_value = attributes[required_attribute]
     unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
       errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+
+    ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS.each do |key|
+      next if key == required_attribute || !attributes.key?(key)
+
+      value = attributes[key]
+      unless value.is_a?(String) && !value.strip.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} #{type} #{key} must be a non-empty string"
+      end
     end
 
     if type == "dropdown"
@@ -167,6 +216,17 @@ issue_forms.each do |relative_path, form|
           seen_options[normalized_option] = true
         end
       end
+
+      if attributes.key?("default")
+        default = attributes["default"]
+        valid_default = default.is_a?(Integer) &&
+          options.is_a?(Array) &&
+          default >= 0 &&
+          default < options.length
+        unless valid_default
+          errors << "Issue form #{relative_path} body field #{field_number} dropdown default must index an option"
+        end
+      end
     elsif type == "checkboxes"
       options = attributes["options"]
       if !options.is_a?(Array) || options.empty?
@@ -177,6 +237,10 @@ issue_forms.each do |relative_path, form|
           unless option.is_a?(Hash)
             errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} must be a mapping"
             next
+          end
+
+          (option.keys - ISSUE_FORM_CHECKBOX_OPTION_KEYS).each do |key|
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} has unpermitted key #{key}"
           end
 
           label = option["label"]
@@ -201,10 +265,28 @@ issue_forms.each do |relative_path, form|
     validations = field["validations"]
     if !validations.nil? && !validations.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"
-    elsif validations.is_a?(Hash) &&
-        validations.key?("required") &&
-        ![true, false].include?(validations["required"])
-      errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+    elsif validations.is_a?(Hash)
+      permitted_validations = ISSUE_FORM_VALIDATION_KEYS.fetch(type, [])
+      (validations.keys - permitted_validations).each do |key|
+        errors << "Issue form #{relative_path} body field #{field_number} #{type} has unpermitted validation #{key}"
+      end
+
+      if validations.key?("required") && ![true, false].include?(validations["required"])
+        errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+      end
+
+      if type == "upload" && validations.key?("accept")
+        accept = validations["accept"]
+        if !accept.is_a?(String) || accept.strip.empty?
+          errors << "Issue form #{relative_path} body field #{field_number} upload accept must be a comma-separated extension list"
+        else
+          accept.split(",", -1).map(&:strip).uniq.each do |extension|
+            unless ISSUE_FORM_UPLOAD_EXTENSIONS.include?(extension.downcase)
+              errors << "Issue form #{relative_path} body field #{field_number} upload accept contains unsupported extension #{extension}"
+            end
+          end
+        end
+      end
     end
   end
 
@@ -222,6 +304,10 @@ end
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
 
 if issue_template_config.is_a?(Hash)
+  (issue_template_config.keys - ISSUE_TEMPLATE_CONFIG_KEYS).each do |key|
+    errors << "Issue template config has unpermitted key #{key}"
+  end
+
   blank_issues_enabled = issue_template_config["blank_issues_enabled"]
   unless [true, false].include?(blank_issues_enabled)
     errors << "Issue template config blank_issues_enabled must be a boolean"

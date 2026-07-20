@@ -338,6 +338,310 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_issue_form_top_level_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        unexpected: value
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml has unpermitted top-level key unexpected"
+    end
+  end
+
+  def test_rejects_unpermitted_issue_form_body_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            unexpected: value
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 has unpermitted key unexpected"
+    end
+  end
+
+  def test_rejects_unpermitted_issue_form_attributes
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+              multiple: true
+          - type: markdown
+            attributes:
+              value: Context
+              placeholder: Not supported
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input has unpermitted attribute multiple"
+      assert_includes stderr, "body field 2 markdown has unpermitted attribute placeholder"
+    end
+  end
+
+  def test_rejects_unpermitted_issue_form_validations
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+            validations:
+              accept: .txt
+          - type: markdown
+            attributes:
+              value: Context
+            validations:
+              required: true
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input has unpermitted validation accept"
+      assert_includes stderr, "body field 2 markdown has unpermitted validation required"
+    end
+  end
+
+  def test_rejects_ids_on_markdown_fields
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: markdown
+            id: context
+            attributes:
+              value: Context
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 markdown cannot define an id"
+    end
+  end
+
+  def test_rejects_unpermitted_checkbox_option_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: checkboxes
+            id: confirmation
+            attributes:
+              label: Confirmation
+              options:
+                - label: I confirm this report is complete.
+                  checked: true
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "checkbox option 1 has unpermitted key checked"
+    end
+  end
+
+  def test_rejects_invalid_optional_text_attributes
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+              description: false
+              placeholder: ""
+              value:
+                - invalid
+          - type: textarea
+            id: logs
+            attributes:
+              label: Logs
+              render: 123
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input description must be a non-empty string"
+      assert_includes stderr, "body field 1 input placeholder must be a non-empty string"
+      assert_includes stderr, "body field 1 input value must be a non-empty string"
+      assert_includes stderr, "body field 2 textarea render must be a non-empty string"
+    end
+  end
+
+  def test_rejects_invalid_dropdown_defaults
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              options:
+                - frontend
+                - backend
+              default: "0"
+          - type: dropdown
+            id: priority
+            attributes:
+              label: Priority
+              options:
+                - P0
+                - P1
+              default: 2
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown default must index an option"
+      assert_includes stderr, "body field 2 dropdown default must index an option"
+    end
+  end
+
+  def test_rejects_invalid_upload_accept_lists
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: upload
+            id: screenshots
+            attributes:
+              label: Screenshots
+            validations:
+              accept:
+                - .png
+          - type: upload
+            id: attachment
+            attributes:
+              label: Attachment
+            validations:
+              accept: ".pdf,.exe"
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 upload accept must be a comma-separated extension list"
+      assert_includes stderr, "body field 2 upload accept contains unsupported extension .exe"
+    end
+  end
+
+  def test_rejects_unpermitted_issue_template_config_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links: []
+        unexpected: value
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template config has unpermitted key unexpected"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
