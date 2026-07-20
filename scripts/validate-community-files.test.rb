@@ -586,6 +586,41 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_upload_accept_lists
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: upload
+            id: screenshots
+            attributes:
+              label: Screenshots
+            validations:
+              accept:
+                - .png
+          - type: upload
+            id: attachment
+            attributes:
+              label: Attachment
+            validations:
+              accept: ".pdf,.exe"
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 upload accept must be a comma-separated extension list"
+      assert_includes stderr, "body field 2 upload accept contains unsupported extension .exe"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

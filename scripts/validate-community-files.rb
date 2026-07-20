@@ -37,6 +37,10 @@ ISSUE_FORM_VALIDATION_KEYS = {
 }.freeze
 ISSUE_FORM_CHECKBOX_OPTION_KEYS = %w[label required].freeze
 ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS = %w[description placeholder render value].freeze
+ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
+  .csv .docx .gif .gz .jpeg .jpg .js .json .log .mov .mp4 .pdf .png .pptx
+  .py .svg .tar.gz .ts .txt .webm .webp .xlsx .zip
+].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -268,6 +272,19 @@ issue_forms.each do |relative_path, form|
 
       if validations.key?("required") && ![true, false].include?(validations["required"])
         errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+      end
+
+      if type == "upload" && validations.key?("accept")
+        accept = validations["accept"]
+        if !accept.is_a?(String) || accept.strip.empty?
+          errors << "Issue form #{relative_path} body field #{field_number} upload accept must be a comma-separated extension list"
+        else
+          accept.split(",", -1).map(&:strip).uniq.each do |extension|
+            unless ISSUE_FORM_UPLOAD_EXTENSIONS.include?(extension.downcase)
+              errors << "Issue form #{relative_path} body field #{field_number} upload accept contains unsupported extension #{extension}"
+            end
+          end
+        end
       end
     end
   end
