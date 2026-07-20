@@ -77,8 +77,17 @@ yaml_files.each do |path|
   end
 end
 
+yaml_files.each do |path|
+  relative_path = path.relative_path_from(ROOT).to_s
+  next unless relative_path.start_with?(".github/ISSUE_TEMPLATE/")
+  next unless path.extname == ".yaml"
+
+  errors << "Issue form #{relative_path} must use the .yml extension"
+end
+
 issue_forms = yaml_documents.select do |relative_path, _document|
   relative_path.start_with?(".github/ISSUE_TEMPLATE/") &&
+    relative_path.end_with?(".yml") &&
     !relative_path.end_with?("/config.yml")
 end
 

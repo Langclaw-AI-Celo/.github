@@ -793,6 +793,30 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_yaml_extension_for_issue_forms
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yaml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: textarea
+            attributes:
+              label: Reproduction steps
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue form .github/ISSUE_TEMPLATE/bug_report.yaml must use the .yml extension"
+    end
+  end
+
   def test_rejects_colliding_issue_form_references
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
