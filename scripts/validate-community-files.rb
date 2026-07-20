@@ -19,6 +19,14 @@ REQUIRED_FILES = %w[
 ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
 ISSUE_FORM_TOP_LEVEL_KEYS = %w[assignees body description labels name projects title type].freeze
 ISSUE_FORM_BODY_KEYS = %w[attributes id type validations].freeze
+ISSUE_FORM_ATTRIBUTE_KEYS = {
+  "checkboxes" => %w[description label options],
+  "dropdown" => %w[default description label multiple options],
+  "input" => %w[description label placeholder value],
+  "markdown" => %w[value],
+  "textarea" => %w[description label placeholder render value],
+  "upload" => %w[description label]
+}.freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -142,6 +150,11 @@ issue_forms.each do |relative_path, form|
     unless attributes.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} attributes must be a mapping"
       next
+    end
+
+    permitted_attributes = ISSUE_FORM_ATTRIBUTE_KEYS.fetch(type, [])
+    (attributes.keys - permitted_attributes).each do |key|
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} has unpermitted attribute #{key}"
     end
 
     required_attribute = type == "markdown" ? "value" : "label"

@@ -390,6 +390,37 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_issue_form_attributes
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+              multiple: true
+          - type: markdown
+            attributes:
+              value: Context
+              placeholder: Not supported
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input has unpermitted attribute multiple"
+      assert_includes stderr, "body field 2 markdown has unpermitted attribute placeholder"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
