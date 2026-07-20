@@ -211,6 +211,17 @@ issue_forms.each do |relative_path, form|
           seen_options[normalized_option] = true
         end
       end
+
+      if attributes.key?("default")
+        default = attributes["default"]
+        valid_default = default.is_a?(Integer) &&
+          options.is_a?(Array) &&
+          default >= 0 &&
+          default < options.length
+        unless valid_default
+          errors << "Issue form #{relative_path} body field #{field_number} dropdown default must index an option"
+        end
+      end
     elsif type == "checkboxes"
       options = attributes["options"]
       if !options.is_a?(Array) || options.empty?

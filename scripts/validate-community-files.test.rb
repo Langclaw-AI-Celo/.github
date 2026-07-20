@@ -548,6 +548,44 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_dropdown_defaults
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              options:
+                - frontend
+                - backend
+              default: "0"
+          - type: dropdown
+            id: priority
+            attributes:
+              label: Priority
+              options:
+                - P0
+                - P1
+              default: 2
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown default must index an option"
+      assert_includes stderr, "body field 2 dropdown default must index an option"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)
