@@ -236,6 +236,34 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_empty_optional_issue_form_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        title: "   "
+        type: ""
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml title must be a non-empty string"
+      assert_includes stderr, "bug_report.yml type must be a non-empty string"
+    end
+  end
+
   def test_validates_issue_form_assignment_metadata
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
@@ -586,6 +614,35 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_reserved_dropdown_options_with_defaults
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              options:
+                - frontend
+                - n/a
+              default: 0
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown uses reserved option n/a"
+    end
+  end
+
   def test_rejects_invalid_upload_accept_lists
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
@@ -639,6 +696,206 @@ class CommunityFilesValidatorTest < Minitest::Test
 
       refute status.success?
       assert_includes stderr, "Issue template config has unpermitted key unexpected"
+    end
+  end
+
+  def test_rejects_unpermitted_contact_link_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Support
+            url: https://github.com/Langclaw-AI-Celo/.github/discussions
+            about: Ask a support question.
+            icon: comment
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template contact link 1 has unpermitted key icon"
+    end
+  end
+
+  def test_allows_omitted_issue_form_ids
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_ignores_non_template_github_yaml
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/dependabot.yml").write(<<~YAML)
+        version: 2
+        updates:
+          - package-ecosystem: github-actions
+            directory: /
+            schedule:
+              interval: weekly
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_rejects_issue_form_names_with_three_characters
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug
+        description: Report a reproducible problem.
+        body:
+          - type: textarea
+            attributes:
+              label: Reproduction steps
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml name must contain more than 3 characters"
+    end
+  end
+
+  def test_rejects_yaml_extension_for_issue_forms
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yaml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: textarea
+            attributes:
+              label: Reproduction steps
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue form .github/ISSUE_TEMPLATE/bug_report.yaml must use the .yml extension"
+    end
+  end
+
+  def test_rejects_password_labels_on_text_fields
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Account password
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input label contains forbidden word password"
+    end
+  end
+
+  def test_rejects_colliding_issue_form_references
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Name?
+          - type: input
+            id: name
+            attributes:
+              label: Name???????
+          - type: textarea
+            attributes:
+              label: Wallet
+          - type: checkboxes
+            id: confirmations
+            attributes:
+              label: Confirmation
+              options:
+                - label: Wallet
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml repeats field reference name"
+      assert_includes stderr, "bug_report.yml repeats field reference wallet"
+    end
+  end
+
+  def test_rejects_relative_links_outside_repository
+    Dir.mktmpdir("community-files") do |directory|
+      container = Pathname(directory)
+      root = container.join("repository")
+      root.mkpath
+      copy_profile_files(root)
+      container.join("outside.md").write("Outside the repository.\n")
+      root.join("README.md").write("[Outside](../outside.md)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Relative link escapes repository in README.md: ../outside.md"
     end
   end
 

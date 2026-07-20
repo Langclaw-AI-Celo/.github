@@ -42,7 +42,21 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
   .py .svg .tar.gz .ts .txt .webm .webp .xlsx .zip
 ].freeze
 ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
+ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
+ISSUE_FORM_FORBIDDEN_LABEL_PATTERN = /\bpasswords?\b/i
+
+def issue_form_reference(value)
+  return unless value.is_a?(String)
+
+  value
+    .unicode_normalize(:nfkd)
+    .encode("ASCII", invalid: :replace, undef: :replace, replace: "")
+    .downcase
+    .gsub(/[^a-z0-9_-]+/, "-")
+    .gsub(/-+/, "-")
+    .gsub(/\A-+|-+\z/, "")
+end
 
 errors = []
 
@@ -64,8 +78,18 @@ yaml_files.each do |path|
   end
 end
 
-issue_forms = yaml_documents.reject do |relative_path, _document|
-  relative_path.end_with?("/config.yml") || relative_path.include?("/workflows/")
+yaml_files.each do |path|
+  relative_path = path.relative_path_from(ROOT).to_s
+  next unless relative_path.start_with?(".github/ISSUE_TEMPLATE/")
+  next unless path.extname == ".yaml"
+
+  errors << "Issue form #{relative_path} must use the .yml extension"
+end
+
+issue_forms = yaml_documents.select do |relative_path, _document|
+  relative_path.start_with?(".github/ISSUE_TEMPLATE/") &&
+    relative_path.end_with?(".yml") &&
+    !relative_path.end_with?("/config.yml")
 end
 
 issue_forms.each do |relative_path, form|
@@ -83,12 +107,25 @@ issue_forms.each do |relative_path, form|
     errors << "Issue form #{relative_path} needs #{field}" unless value.is_a?(String) && !value.strip.empty?
   end
 
-  if form.key?("title") && !form["title"].is_a?(String)
-    errors << "Issue form #{relative_path} title must be a string"
+  name = form["name"]
+  if name.is_a?(String) && !name.strip.empty? && name.strip.length <= 3
+    errors << "Issue form #{relative_path} name must contain more than 3 characters"
   end
 
-  if form.key?("type") && !form["type"].is_a?(String)
-    errors << "Issue form #{relative_path} type must be a string"
+  if form.key?("title")
+    if !form["title"].is_a?(String)
+      errors << "Issue form #{relative_path} title must be a string"
+    elsif form["title"].strip.empty?
+      errors << "Issue form #{relative_path} title must be a non-empty string"
+    end
+  end
+
+  if form.key?("type")
+    if !form["type"].is_a?(String)
+      errors << "Issue form #{relative_path} type must be a string"
+    elsif form["type"].strip.empty?
+      errors << "Issue form #{relative_path} type must be a non-empty string"
+    end
   end
 
   %w[labels assignees].each do |field|
@@ -156,7 +193,7 @@ issue_forms.each do |relative_path, form|
 
     if type == "markdown" && field.key?("id")
       errors << "Issue form #{relative_path} body field #{field_number} markdown cannot define an id"
-    elsif type != "markdown"
+    elsif type != "markdown" && field.key?("id")
       id = field["id"]
       unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
         errors << "Issue form #{relative_path} body field #{field_number} has invalid id #{id}"
@@ -178,6 +215,11 @@ issue_forms.each do |relative_path, form|
     attribute_value = attributes[required_attribute]
     unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
       errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+    if %w[input textarea].include?(type) &&
+        attribute_value.is_a?(String) &&
+        attribute_value.match?(ISSUE_FORM_FORBIDDEN_LABEL_PATTERN)
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} label contains forbidden word password"
     end
 
     ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS.each do |key|
@@ -209,6 +251,9 @@ issue_forms.each do |relative_path, form|
           normalized_option = option.strip
           if normalized_option.casecmp?("none")
             errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option none"
+          end
+          if attributes.key?("default") && normalized_option.casecmp?("n/a")
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option n/a"
           end
           if seen_options[normalized_option]
             errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{normalized_option}"
@@ -299,6 +344,30 @@ issue_forms.each do |relative_path, form|
   duplicates.each do |id|
     errors << "Issue form #{relative_path} repeats field id #{id}"
   end
+
+  field_references = body.flat_map do |field|
+    next [] unless field.is_a?(Hash) && field["type"] != "markdown"
+
+    attributes = field["attributes"]
+    next [] unless attributes.is_a?(Hash)
+
+    references = [field["id"] || issue_form_reference(attributes["label"])]
+    if field["type"] == "checkboxes" && attributes["options"].is_a?(Array)
+      references.concat(attributes["options"].map do |option|
+        next unless option.is_a?(Hash)
+
+        issue_form_reference(option["label"])
+      end.compact)
+    end
+    references.compact.reject(&:empty?)
+  end
+  duplicate_references = field_references
+    .group_by(&:itself)
+    .select { |_reference, values| values.length > 1 }
+    .keys
+  duplicate_references.each do |reference|
+    errors << "Issue form #{relative_path} repeats field reference #{reference}"
+  end
 end
 
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
@@ -323,6 +392,10 @@ if issue_template_config.is_a?(Hash)
     unless link.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} must be a mapping"
       next
+    end
+
+    (link.keys - ISSUE_TEMPLATE_CONTACT_LINK_KEYS).each do |key|
+      errors << "Issue template contact link #{index + 1} has unpermitted key #{key}"
     end
 
     %w[name about].each do |field|
@@ -380,6 +453,13 @@ markdown_files.each do |path|
     else
       path.dirname.join(file_target)
     end.cleanpath
+
+    inside_repository = destination == ROOT ||
+      destination.to_s.start_with?("#{ROOT}#{File::SEPARATOR}")
+    unless inside_repository
+      errors << "Relative link escapes repository in #{relative_path}: #{target}"
+      next
+    end
 
     errors << "Broken relative link in #{relative_path}: #{target}" unless destination.exist?
   rescue URI::InvalidURIError
