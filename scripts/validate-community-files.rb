@@ -156,7 +156,7 @@ issue_forms.each do |relative_path, form|
 
     if type == "markdown" && field.key?("id")
       errors << "Issue form #{relative_path} body field #{field_number} markdown cannot define an id"
-    elsif type != "markdown"
+    elsif type != "markdown" && field.key?("id")
       id = field["id"]
       unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
         errors << "Issue form #{relative_path} body field #{field_number} has invalid id #{id}"
