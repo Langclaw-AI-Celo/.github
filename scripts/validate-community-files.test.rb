@@ -483,6 +483,34 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_checkbox_option_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: checkboxes
+            id: confirmation
+            attributes:
+              label: Confirmation
+              options:
+                - label: I confirm this report is complete.
+                  checked: true
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "checkbox option 1 has unpermitted key checked"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

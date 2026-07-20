@@ -35,6 +35,7 @@ ISSUE_FORM_VALIDATION_KEYS = {
   "textarea" => %w[required],
   "upload" => %w[accept required]
 }.freeze
+ISSUE_FORM_CHECKBOX_OPTION_KEYS = %w[label required].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -210,6 +211,10 @@ issue_forms.each do |relative_path, form|
           unless option.is_a?(Hash)
             errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} must be a mapping"
             next
+          end
+
+          (option.keys - ISSUE_FORM_CHECKBOX_OPTION_KEYS).each do |key|
+            errors << "Issue form #{relative_path} body field #{field_number} checkbox option #{option_index + 1} has unpermitted key #{key}"
           end
 
           label = option["label"]
