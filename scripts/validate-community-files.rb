@@ -17,6 +17,7 @@ REQUIRED_FILES = %w[
   profile/README.md
 ].freeze
 ISSUE_FORM_FIELD_TYPES = %w[checkboxes dropdown input markdown textarea upload].freeze
+ISSUE_FORM_TOP_LEVEL_KEYS = %w[assignees body description labels name projects title type].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -47,6 +48,10 @@ issue_forms.each do |relative_path, form|
   unless form.is_a?(Hash)
     errors << "Issue form must be a mapping: #{relative_path}"
     next
+  end
+
+  (form.keys - ISSUE_FORM_TOP_LEVEL_KEYS).each do |key|
+    errors << "Issue form #{relative_path} has unpermitted top-level key #{key}"
   end
 
   %w[name description].each do |field|
