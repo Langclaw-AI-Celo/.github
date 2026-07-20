@@ -83,12 +83,20 @@ issue_forms.each do |relative_path, form|
     errors << "Issue form #{relative_path} needs #{field}" unless value.is_a?(String) && !value.strip.empty?
   end
 
-  if form.key?("title") && !form["title"].is_a?(String)
-    errors << "Issue form #{relative_path} title must be a string"
+  if form.key?("title")
+    if !form["title"].is_a?(String)
+      errors << "Issue form #{relative_path} title must be a string"
+    elsif form["title"].strip.empty?
+      errors << "Issue form #{relative_path} title must be a non-empty string"
+    end
   end
 
-  if form.key?("type") && !form["type"].is_a?(String)
-    errors << "Issue form #{relative_path} type must be a string"
+  if form.key?("type")
+    if !form["type"].is_a?(String)
+      errors << "Issue form #{relative_path} type must be a string"
+    elsif form["type"].strip.empty?
+      errors << "Issue form #{relative_path} type must be a non-empty string"
+    end
   end
 
   %w[labels assignees].each do |field|

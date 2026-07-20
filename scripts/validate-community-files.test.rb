@@ -236,6 +236,34 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_empty_optional_issue_form_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        title: "   "
+        type: ""
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml title must be a non-empty string"
+      assert_includes stderr, "bug_report.yml type must be a non-empty string"
+    end
+  end
+
   def test_validates_issue_form_assignment_metadata
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
