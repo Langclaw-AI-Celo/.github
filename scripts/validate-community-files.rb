@@ -27,6 +27,14 @@ ISSUE_FORM_ATTRIBUTE_KEYS = {
   "textarea" => %w[description label placeholder render value],
   "upload" => %w[description label]
 }.freeze
+ISSUE_FORM_VALIDATION_KEYS = {
+  "checkboxes" => %w[required],
+  "dropdown" => %w[required],
+  "input" => %w[required],
+  "markdown" => [],
+  "textarea" => %w[required],
+  "upload" => %w[accept required]
+}.freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -224,10 +232,15 @@ issue_forms.each do |relative_path, form|
     validations = field["validations"]
     if !validations.nil? && !validations.is_a?(Hash)
       errors << "Issue form #{relative_path} body field #{field_number} validations must be a mapping"
-    elsif validations.is_a?(Hash) &&
-        validations.key?("required") &&
-        ![true, false].include?(validations["required"])
-      errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+    elsif validations.is_a?(Hash)
+      permitted_validations = ISSUE_FORM_VALIDATION_KEYS.fetch(type, [])
+      (validations.keys - permitted_validations).each do |key|
+        errors << "Issue form #{relative_path} body field #{field_number} #{type} has unpermitted validation #{key}"
+      end
+
+      if validations.key?("required") && ![true, false].include?(validations["required"])
+        errors << "Issue form #{relative_path} body field #{field_number} required must be a boolean"
+      end
     end
   end
 
