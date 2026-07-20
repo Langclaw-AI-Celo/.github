@@ -699,6 +699,30 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unpermitted_contact_link_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Support
+            url: https://github.com/Langclaw-AI-Celo/.github/discussions
+            about: Ask a support question.
+            icon: comment
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template contact link 1 has unpermitted key icon"
+    end
+  end
+
   def test_allows_omitted_issue_form_ids
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

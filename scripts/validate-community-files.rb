@@ -42,6 +42,7 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
   .py .svg .tar.gz .ts .txt .webm .webp .xlsx .zip
 ].freeze
 ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
+ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -334,6 +335,10 @@ if issue_template_config.is_a?(Hash)
     unless link.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} must be a mapping"
       next
+    end
+
+    (link.keys - ISSUE_TEMPLATE_CONTACT_LINK_KEYS).each do |key|
+      errors << "Issue template contact link #{index + 1} has unpermitted key #{key}"
     end
 
     %w[name about].each do |field|
