@@ -44,6 +44,7 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
 ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
+ISSUE_FORM_FORBIDDEN_LABEL_PATTERN = /\bpasswords?\b/i
 
 def issue_form_reference(value)
   return unless value.is_a?(String)
@@ -214,6 +215,11 @@ issue_forms.each do |relative_path, form|
     attribute_value = attributes[required_attribute]
     unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
       errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+    if %w[input textarea].include?(type) &&
+        attribute_value.is_a?(String) &&
+        attribute_value.match?(ISSUE_FORM_FORBIDDEN_LABEL_PATTERN)
+      errors << "Issue form #{relative_path} body field #{field_number} #{type} label contains forbidden word password"
     end
 
     ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS.each do |key|
