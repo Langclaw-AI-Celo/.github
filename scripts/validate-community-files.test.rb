@@ -511,6 +511,43 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_optional_text_attributes
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+              description: false
+              placeholder: ""
+              value:
+                - invalid
+          - type: textarea
+            id: logs
+            attributes:
+              label: Logs
+              render: 123
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input description must be a non-empty string"
+      assert_includes stderr, "body field 1 input placeholder must be a non-empty string"
+      assert_includes stderr, "body field 1 input value must be a non-empty string"
+      assert_includes stderr, "body field 2 textarea render must be a non-empty string"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

@@ -36,6 +36,7 @@ ISSUE_FORM_VALIDATION_KEYS = {
   "upload" => %w[accept required]
 }.freeze
 ISSUE_FORM_CHECKBOX_OPTION_KEYS = %w[label required].freeze
+ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS = %w[description placeholder render value].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 
 errors = []
@@ -172,6 +173,15 @@ issue_forms.each do |relative_path, form|
     attribute_value = attributes[required_attribute]
     unless attribute_value.is_a?(String) && !attribute_value.strip.empty?
       errors << "Issue form #{relative_path} body field #{field_number} #{type} needs a #{required_attribute}"
+    end
+
+    ISSUE_FORM_OPTIONAL_TEXT_ATTRIBUTE_KEYS.each do |key|
+      next if key == required_attribute || !attributes.key?(key)
+
+      value = attributes[key]
+      unless value.is_a?(String) && !value.strip.empty?
+        errors << "Issue form #{relative_path} body field #{field_number} #{type} #{key} must be a non-empty string"
+      end
     end
 
     if type == "dropdown"
