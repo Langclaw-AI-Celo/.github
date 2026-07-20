@@ -210,6 +210,9 @@ issue_forms.each do |relative_path, form|
           if normalized_option.casecmp?("none")
             errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option none"
           end
+          if attributes.key?("default") && normalized_option.casecmp?("n/a")
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option n/a"
+          end
           if seen_options[normalized_option]
             errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{normalized_option}"
           end

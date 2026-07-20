@@ -586,6 +586,35 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_reserved_dropdown_options_with_defaults
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: repository
+            attributes:
+              label: Repository
+              options:
+                - frontend
+                - n/a
+              default: 0
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 dropdown uses reserved option n/a"
+    end
+  end
+
   def test_rejects_invalid_upload_accept_lists
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
