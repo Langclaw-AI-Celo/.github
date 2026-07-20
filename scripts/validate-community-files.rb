@@ -77,8 +77,9 @@ yaml_files.each do |path|
   end
 end
 
-issue_forms = yaml_documents.reject do |relative_path, _document|
-  relative_path.end_with?("/config.yml") || relative_path.include?("/workflows/")
+issue_forms = yaml_documents.select do |relative_path, _document|
+  relative_path.start_with?(".github/ISSUE_TEMPLATE/") &&
+    !relative_path.end_with?("/config.yml")
 end
 
 issue_forms.each do |relative_path, form|
