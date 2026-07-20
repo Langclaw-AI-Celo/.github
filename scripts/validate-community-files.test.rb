@@ -807,6 +807,26 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_relative_links_outside_repository
+    Dir.mktmpdir("community-files") do |directory|
+      container = Pathname(directory)
+      root = container.join("repository")
+      root.mkpath
+      copy_profile_files(root)
+      container.join("outside.md").write("Outside the repository.\n")
+      root.join("README.md").write("[Outside](../outside.md)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Relative link escapes repository in README.md: ../outside.md"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

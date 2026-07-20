@@ -434,6 +434,13 @@ markdown_files.each do |path|
       path.dirname.join(file_target)
     end.cleanpath
 
+    inside_repository = destination == ROOT ||
+      destination.to_s.start_with?("#{ROOT}#{File::SEPARATOR}")
+    unless inside_repository
+      errors << "Relative link escapes repository in #{relative_path}: #{target}"
+      next
+    end
+
     errors << "Broken relative link in #{relative_path}: #{target}" unless destination.exist?
   rescue URI::InvalidURIError
     errors << "Invalid link in #{relative_path}: #{target}"
