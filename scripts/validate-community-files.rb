@@ -538,7 +538,28 @@ markdown_files.each do |path|
     next
   end
 
-  path.read.scan(/\[[^\]]*\]\(([^)]+)\)/).flatten.each do |raw_target|
+  contents = path.read
+  inline_targets = contents.scan(/\[[^\]]*\]\(([^)]+)\)/).flatten
+  reference_definitions = contents.scan(
+    /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
+  )
+  reference_targets = reference_definitions.map do |_label, angle_target, bare_target|
+    angle_target || bare_target
+  end
+  normalize_reference = lambda do |value|
+    value.strip.gsub(/[ \t\r\n]+/, " ").downcase
+  end
+  defined_references = reference_definitions.map do |label, _angle_target, _bare_target|
+    normalize_reference.call(label)
+  end
+  contents.scan(/\[([^\]\n]+)\]\[([^\]\n]*)\]/).each do |text, label|
+    reference = label.empty? ? text : label
+    next if defined_references.include?(normalize_reference.call(reference))
+
+    errors << "Undefined Markdown link reference in #{relative_path}: #{reference}"
+  end
+
+  (inline_targets + reference_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
     next if target.empty? || target.start_with?("#")
 

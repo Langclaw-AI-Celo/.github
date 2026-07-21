@@ -1140,6 +1140,29 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_validates_reference_style_markdown_link_targets
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Read the [missing guide][guide].
+        Read the [undefined guide][undefined].
+
+        [guide]: missing-guide.md
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Broken relative link in README.md: missing-guide.md"
+      assert_includes stderr, "Undefined Markdown link reference in README.md: undefined"
+    end
+  end
+
   def test_rejects_issue_templates_in_nested_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
