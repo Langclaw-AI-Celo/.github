@@ -925,6 +925,33 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_duplicate_issue_form_names
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      %w[bug_report.yml feature_request.yml].each do |filename|
+        root.join(".github/ISSUE_TEMPLATE", filename).write(<<~YAML)
+          name: Duplicate template
+          description: Collect focused input.
+          body:
+            - type: input
+              id: response
+              attributes:
+                label: Response
+        YAML
+      end
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue form name Duplicate template is repeated"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

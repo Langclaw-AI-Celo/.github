@@ -397,6 +397,21 @@ issue_forms.each do |relative_path, form|
   end
 end
 
+issue_form_names = issue_forms.each_with_object([]) do |(relative_path, form), names|
+  next unless form.is_a?(Hash)
+
+  name = form["name"]
+  next unless name.is_a?(String) && !name.strip.empty?
+
+  names << [relative_path, name.strip]
+end
+issue_form_names.group_by { |_relative_path, name| name.unicode_normalize(:nfkc).downcase }.each_value do |entries|
+  next unless entries.length > 1
+
+  paths = entries.map(&:first).join(", ")
+  errors << "Issue form name #{entries.first.last} is repeated in #{paths}"
+end
+
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
 
 if issue_template_config.is_a?(Hash)
