@@ -539,7 +539,7 @@ markdown_files.each do |path|
   end
 
   contents = path.read
-  inline_targets = contents.scan(/\[[^\]]*\]\(([^)]+)\)/).flatten
+  inline_targets = contents.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
   reference_definitions = contents.scan(
     /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
   )
@@ -561,7 +561,11 @@ markdown_files.each do |path|
 
   (inline_targets + reference_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
-    next if target.empty? || target.start_with?("#")
+    if target.empty?
+      errors << "Empty Markdown link target in #{relative_path}"
+      next
+    end
+    next if target.start_with?("#")
 
     markdown_link_count += 1
 
