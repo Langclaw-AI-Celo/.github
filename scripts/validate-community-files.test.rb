@@ -994,6 +994,32 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_userinfo_in_public_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      misleading_url = "https://github.com@evil.example/support"
+      root.join("README.md").write("[Misleading support](#{misleading_url})\n")
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Misleading support
+            url: #{misleading_url}
+            about: This host is not GitHub.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template contact link 1 URL must not include user information"
+      assert_includes stderr, "External link includes user information in README.md: #{misleading_url}"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

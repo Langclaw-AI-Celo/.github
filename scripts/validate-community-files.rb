@@ -468,6 +468,7 @@ if issue_template_config.is_a?(Hash)
     end
 
     url = link["url"]
+    uri = nil
     valid_url = begin
       uri = URI.parse(url.to_s)
       url.is_a?(String) && uri.scheme == "https" && !uri.host.to_s.empty?
@@ -476,6 +477,8 @@ if issue_template_config.is_a?(Hash)
     end
     unless valid_url
       errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
+    else
+      errors << "Issue template contact link #{index + 1} URL must not include user information" if uri.userinfo
     end
   end
 elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
@@ -504,6 +507,9 @@ markdown_files.each do |path|
     if target.match?(/\Ahttps?:\/\//)
       uri = URI.parse(target)
       errors << "External link lacks a host in #{relative_path}: #{target}" unless uri.host
+      if uri.userinfo
+        errors << "External link includes user information in #{relative_path}: #{target}"
+      end
       next
     end
 
