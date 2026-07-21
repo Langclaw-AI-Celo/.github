@@ -1103,6 +1103,31 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_classic_issue_templates_without_about_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Classic report
+        ---
+
+        Describe the report.
+      MARKDOWN
+      root.join(".github/ISSUE_TEMPLATE/plain.md").write("Describe the report.\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/classic.md needs about"
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/plain.md needs YAML front matter"
+    end
+  end
+
   def test_rejects_insecure_external_markdown_links
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

@@ -441,13 +441,19 @@ end
 ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
   next unless path_inside_repository?(path)
 
+  relative_path = path.relative_path_from(ROOT).to_s
   lines = path.read.lines
-  next unless lines.first&.strip == "---"
+  unless lines.first&.strip == "---"
+    errors << "Classic issue template #{relative_path} needs YAML front matter"
+    next
+  end
 
   closing_index = lines.drop(1).index { |line| line.strip == "---" }
-  next unless closing_index
+  unless closing_index
+    errors << "Classic issue template #{relative_path} has unterminated YAML front matter"
+    next
+  end
 
-  relative_path = path.relative_path_from(ROOT).to_s
   begin
     front_matter = lines[1, closing_index].join
     duplicate_yaml_mapping_keys(Psych.parse_stream(front_matter)).uniq.each do |key|
@@ -458,7 +464,17 @@ ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
     errors << "Invalid YAML front matter in #{relative_path}: #{error.message.lines.first.strip}"
     next
   end
-  next unless metadata.is_a?(Hash)
+  unless metadata.is_a?(Hash)
+    errors << "Classic issue template #{relative_path} front matter must be a mapping"
+    next
+  end
+
+  %w[name about].each do |field|
+    value = metadata[field]
+    unless value.is_a?(String) && !value.strip.empty?
+      errors << "Classic issue template #{relative_path} needs #{field}"
+    end
+  end
 
   name = metadata["name"]
   next unless name.is_a?(String) && !name.strip.empty?
