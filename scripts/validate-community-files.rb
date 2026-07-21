@@ -421,7 +421,7 @@ issue_forms.each do |relative_path, form|
   end
 end
 
-issue_form_names = issue_forms.each_with_object([]) do |(relative_path, form), names|
+issue_template_names = issue_forms.each_with_object([]) do |(relative_path, form), names|
   next unless form.is_a?(Hash)
 
   name = form["name"]
@@ -429,11 +429,38 @@ issue_form_names = issue_forms.each_with_object([]) do |(relative_path, form), n
 
   names << [relative_path, name.strip]
 end
-issue_form_names.group_by { |_relative_path, name| name.unicode_normalize(:nfkc).downcase }.each_value do |entries|
+ROOT.glob(".github/ISSUE_TEMPLATE/*.md").sort.each do |path|
+  next unless path_inside_repository?(path)
+
+  lines = path.read.lines
+  next unless lines.first&.strip == "---"
+
+  closing_index = lines.drop(1).index { |line| line.strip == "---" }
+  next unless closing_index
+
+  relative_path = path.relative_path_from(ROOT).to_s
+  begin
+    front_matter = lines[1, closing_index].join
+    duplicate_yaml_mapping_keys(Psych.parse_stream(front_matter)).uniq.each do |key|
+      errors << "Duplicate YAML front matter key #{key} in #{relative_path}"
+    end
+    metadata = YAML.safe_load(front_matter, aliases: false)
+  rescue Psych::Exception => error
+    errors << "Invalid YAML front matter in #{relative_path}: #{error.message.lines.first.strip}"
+    next
+  end
+  next unless metadata.is_a?(Hash)
+
+  name = metadata["name"]
+  next unless name.is_a?(String) && !name.strip.empty?
+
+  issue_template_names << [relative_path, name.strip]
+end
+issue_template_names.group_by { |_relative_path, name| name.unicode_normalize(:nfkc).downcase }.each_value do |entries|
   next unless entries.length > 1
 
   paths = entries.map(&:first).join(", ")
-  errors << "Issue form name #{entries.first.last} is repeated in #{paths}"
+  errors << "Issue template name #{entries.first.last} is repeated in #{paths}"
 end
 
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]

@@ -948,7 +948,7 @@ class CommunityFilesValidatorTest < Minitest::Test
       )
 
       refute status.success?
-      assert_includes stderr, "Issue form name Duplicate template is repeated"
+      assert_includes stderr, "Issue template name Duplicate template is repeated"
     end
   end
 
@@ -1048,6 +1048,58 @@ class CommunityFilesValidatorTest < Minitest::Test
 
       refute status.success?
       assert_includes stderr, "YAML file must contain exactly one document: .github/ISSUE_TEMPLATE/bug_report.yml"
+    end
+  end
+
+  def test_rejects_names_shared_by_yaml_and_markdown_issue_templates
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Bug report
+        about: Report a bug with the classic template.
+        title: "[Classic bug]: "
+        labels: bug
+        assignees: ""
+        ---
+
+        Describe the bug.
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template name Bug report is repeated"
+    end
+  end
+
+  def test_rejects_duplicate_keys_in_classic_template_front_matter
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Bug report
+        name: Unique replacement
+        about: Report a bug with the classic template.
+        ---
+
+        Describe the bug.
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Duplicate YAML front matter key name in .github/ISSUE_TEMPLATE/classic.md"
     end
   end
 
