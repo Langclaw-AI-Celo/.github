@@ -547,6 +547,9 @@ markdown_files.each do |path|
     if target.match?(/\Ahttps?:\/\//)
       uri = URI.parse(target)
       errors << "External link lacks a host in #{relative_path}: #{target}" unless uri.host
+      unless uri.scheme == "https"
+        errors << "External link must use HTTPS in #{relative_path}: #{target}"
+      end
       if uri.userinfo
         errors << "External link includes user information in #{relative_path}: #{target}"
       end
