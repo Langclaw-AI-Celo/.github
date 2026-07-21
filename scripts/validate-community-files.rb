@@ -525,7 +525,7 @@ elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
   errors << "Issue template config must be a mapping"
 end
 
-markdown_files = ROOT.glob("**/*.md").reject do |path|
+markdown_files = ROOT.glob("**/*.md", File::FNM_DOTMATCH).reject do |path|
   path.each_filename.any? { |part| part == ".git" }
 end.sort
 markdown_link_count = 0

@@ -1120,6 +1120,26 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_validates_markdown_links_in_hidden_github_directories
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/pull_request_template.md").write(
+        "[Insecure checklist](http://example.com/checklist)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "External link must use HTTPS in .github/pull_request_template.md: http://example.com/checklist"
+    end
+  end
+
   def test_rejects_issue_templates_in_nested_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
