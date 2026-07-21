@@ -1103,6 +1103,33 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_issue_templates_in_nested_directories
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      nested_directory = root.join(".github/ISSUE_TEMPLATE/nested")
+      nested_directory.mkpath
+      nested_directory.join("hidden.yml").write(<<~YAML)
+        name: Hidden form
+        description: GitHub does not discover nested issue forms.
+        body:
+          - type: input
+            attributes:
+              label: Response
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template must be stored directly in .github/ISSUE_TEMPLATE: .github/ISSUE_TEMPLATE/nested/hidden.yml"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

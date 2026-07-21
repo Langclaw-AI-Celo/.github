@@ -6,6 +6,7 @@ require "yaml"
 
 DEFAULT_ROOT = Pathname(__dir__).join("..").expand_path
 ROOT = Pathname(ENV.fetch("COMMUNITY_FILES_ROOT", DEFAULT_ROOT.to_s)).expand_path
+ISSUE_TEMPLATE_DIRECTORY = ".github/ISSUE_TEMPLATE"
 REQUIRED_FILES = %w[
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
@@ -106,6 +107,13 @@ end
 yaml_files = ROOT.glob(".github/**/*.{yml,yaml}").sort
 yaml_documents = {}
 
+ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/**/*.{md,yml,yaml}").sort.each do |path|
+  relative_path = path.relative_path_from(ROOT).to_s
+  next if Pathname(relative_path).dirname.to_s == ISSUE_TEMPLATE_DIRECTORY
+
+  errors << "Issue template must be stored directly in #{ISSUE_TEMPLATE_DIRECTORY}: #{relative_path}"
+end
+
 yaml_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
 
@@ -140,7 +148,8 @@ end
 issue_forms = yaml_documents.select do |relative_path, _document|
   relative_path.start_with?(".github/ISSUE_TEMPLATE/") &&
     relative_path.end_with?(".yml") &&
-    !relative_path.end_with?("/config.yml")
+    !relative_path.end_with?("/config.yml") &&
+    Pathname(relative_path).dirname.to_s == ISSUE_TEMPLATE_DIRECTORY
 end
 
 issue_forms.each do |relative_path, form|
@@ -429,7 +438,7 @@ issue_template_names = issue_forms.each_with_object([]) do |(relative_path, form
 
   names << [relative_path, name.strip]
 end
-ROOT.glob(".github/ISSUE_TEMPLATE/*.md").sort.each do |path|
+ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
   next unless path_inside_repository?(path)
 
   lines = path.read.lines
