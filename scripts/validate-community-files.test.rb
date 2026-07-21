@@ -952,6 +952,48 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_repository_files_and_links_resolving_through_external_symlinks
+    Dir.mktmpdir("community-files") do |directory|
+      container = Pathname(directory)
+      root = container.join("repository")
+      root.mkpath
+      copy_profile_files(root)
+
+      outside_readme = container.join("outside-readme.md")
+      outside_readme.write("External readme.\n")
+      FileUtils.rm(root.join("README.md"))
+      File.symlink(outside_readme, root.join("README.md"))
+
+      outside_form = container.join("outside-form.yml")
+      outside_form.write(<<~YAML)
+        name: External form
+        description: This file lives outside the repository.
+        body:
+          - type: input
+            attributes:
+              label: Response
+      YAML
+      FileUtils.rm(root.join(".github/ISSUE_TEMPLATE/bug_report.yml"))
+      File.symlink(outside_form, root.join(".github/ISSUE_TEMPLATE/bug_report.yml"))
+
+      outside_target = container.join("outside-target.md")
+      outside_target.write("External target.\n")
+      File.symlink(outside_target, root.join("profile/linked.md"))
+      root.join("profile/README.md").write("[External](linked.md)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Required file resolves outside repository: README.md"
+      assert_includes stderr, "YAML file resolves outside repository: .github/ISSUE_TEMPLATE/bug_report.yml"
+      assert_includes stderr, "Relative link escapes repository in profile/README.md: linked.md"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

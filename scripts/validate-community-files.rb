@@ -81,11 +81,26 @@ def duplicate_yaml_mapping_keys(node, duplicates = [])
   duplicates
 end
 
+def path_inside_repository?(path)
+  repository_path = ROOT.realpath
+  resolved_path = path.realpath
+
+  resolved_path == repository_path ||
+    resolved_path.to_s.start_with?("#{repository_path}#{File::SEPARATOR}")
+rescue SystemCallError
+  false
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
   path = ROOT.join(relative_path)
-  errors << "Missing required file: #{relative_path}" unless path.file?
+  unless path.file?
+    errors << "Missing required file: #{relative_path}"
+    next
+  end
+
+  errors << "Required file resolves outside repository: #{relative_path}" unless path_inside_repository?(path)
 end
 
 yaml_files = ROOT.glob(".github/**/*.{yml,yaml}").sort
@@ -93,6 +108,11 @@ yaml_documents = {}
 
 yaml_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
+
+  unless path_inside_repository?(path)
+    errors << "YAML file resolves outside repository: #{relative_path}"
+    next
+  end
 
   begin
     contents = path.read
@@ -470,6 +490,11 @@ markdown_link_count = 0
 markdown_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
 
+  unless path_inside_repository?(path)
+    errors << "Markdown file resolves outside repository: #{relative_path}"
+    next
+  end
+
   path.read.scan(/\[[^\]]*\]\(([^)]+)\)/).flatten.each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
     next if target.empty? || target.start_with?("#")
@@ -503,7 +528,14 @@ markdown_files.each do |path|
       next
     end
 
-    errors << "Broken relative link in #{relative_path}: #{target}" unless destination.exist?
+    unless destination.exist?
+      errors << "Broken relative link in #{relative_path}: #{target}"
+      next
+    end
+
+    unless path_inside_repository?(destination)
+      errors << "Relative link escapes repository in #{relative_path}: #{target}"
+    end
   rescue URI::InvalidURIError
     errors << "Invalid link in #{relative_path}: #{target}"
   end
