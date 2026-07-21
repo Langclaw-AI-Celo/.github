@@ -899,6 +899,356 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_duplicate_yaml_mapping_keys
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: First bug report
+        name: Replacement bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: reproduction
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Duplicate YAML key name in .github/ISSUE_TEMPLATE/bug_report.yml"
+    end
+  end
+
+  def test_rejects_duplicate_issue_form_names
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      %w[bug_report.yml feature_request.yml].each do |filename|
+        root.join(".github/ISSUE_TEMPLATE", filename).write(<<~YAML)
+          name: Duplicate template
+          description: Collect focused input.
+          body:
+            - type: input
+              id: response
+              attributes:
+                label: Response
+        YAML
+      end
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template name Duplicate template is repeated"
+    end
+  end
+
+  def test_rejects_repository_files_and_links_resolving_through_external_symlinks
+    Dir.mktmpdir("community-files") do |directory|
+      container = Pathname(directory)
+      root = container.join("repository")
+      root.mkpath
+      copy_profile_files(root)
+
+      outside_readme = container.join("outside-readme.md")
+      outside_readme.write("External readme.\n")
+      FileUtils.rm(root.join("README.md"))
+      File.symlink(outside_readme, root.join("README.md"))
+
+      outside_form = container.join("outside-form.yml")
+      outside_form.write(<<~YAML)
+        name: External form
+        description: This file lives outside the repository.
+        body:
+          - type: input
+            attributes:
+              label: Response
+      YAML
+      FileUtils.rm(root.join(".github/ISSUE_TEMPLATE/bug_report.yml"))
+      File.symlink(outside_form, root.join(".github/ISSUE_TEMPLATE/bug_report.yml"))
+
+      outside_target = container.join("outside-target.md")
+      outside_target.write("External target.\n")
+      File.symlink(outside_target, root.join("profile/linked.md"))
+      root.join("profile/README.md").write("[External](linked.md)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Required file resolves outside repository: README.md"
+      assert_includes stderr, "YAML file resolves outside repository: .github/ISSUE_TEMPLATE/bug_report.yml"
+      assert_includes stderr, "Relative link escapes repository in profile/README.md: linked.md"
+    end
+  end
+
+  def test_rejects_userinfo_in_public_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      misleading_url = "https://github.com@evil.example/support"
+      root.join("README.md").write("[Misleading support](#{misleading_url})\n")
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Misleading support
+            url: #{misleading_url}
+            about: This host is not GitHub.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template contact link 1 URL must not include user information"
+      assert_includes stderr, "External link includes user information in README.md: #{misleading_url}"
+    end
+  end
+
+  def test_rejects_multiple_yaml_documents
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: First document
+        description: This document is valid by itself.
+        body:
+          - type: input
+            attributes:
+              label: Response
+        ---
+        name: Ignored document
+        description: Psych safe_load ignores this document.
+        body:
+          - type: input
+            attributes:
+              label: Ignored response
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "YAML file must contain exactly one document: .github/ISSUE_TEMPLATE/bug_report.yml"
+    end
+  end
+
+  def test_rejects_names_shared_by_yaml_and_markdown_issue_templates
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Bug report
+        about: Report a bug with the classic template.
+        title: "[Classic bug]: "
+        labels: bug
+        assignees: ""
+        ---
+
+        Describe the bug.
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template name Bug report is repeated"
+    end
+  end
+
+  def test_rejects_duplicate_keys_in_classic_template_front_matter
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Bug report
+        name: Unique replacement
+        about: Report a bug with the classic template.
+        ---
+
+        Describe the bug.
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Duplicate YAML front matter key name in .github/ISSUE_TEMPLATE/classic.md"
+    end
+  end
+
+  def test_rejects_classic_issue_templates_without_about_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Classic report
+        ---
+
+        Describe the report.
+      MARKDOWN
+      root.join(".github/ISSUE_TEMPLATE/plain.md").write("Describe the report.\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/classic.md needs about"
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/plain.md needs YAML front matter"
+    end
+  end
+
+  def test_rejects_insecure_external_markdown_links
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write("[Insecure support](http://example.com/support)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "External link must use HTTPS in README.md: http://example.com/support"
+    end
+  end
+
+  def test_validates_markdown_links_in_hidden_github_directories
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/pull_request_template.md").write(
+        "[Insecure checklist](http://example.com/checklist)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "External link must use HTTPS in .github/pull_request_template.md: http://example.com/checklist"
+    end
+  end
+
+  def test_validates_reference_style_markdown_link_targets
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Read the [missing guide][guide].
+        Read the [undefined guide][undefined].
+
+        [guide]: missing-guide.md
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Broken relative link in README.md: missing-guide.md"
+      assert_includes stderr, "Undefined Markdown link reference in README.md: undefined"
+    end
+  end
+
+  def test_rejects_empty_inline_markdown_link_targets
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write("[Missing destination]()\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Empty Markdown link target in README.md"
+    end
+  end
+
+  def test_rejects_mailto_links_without_recipients
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write("[Missing email recipient](mailto:)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Mail link needs a recipient in README.md: mailto:"
+    end
+  end
+
+  def test_rejects_issue_templates_in_nested_directories
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      nested_directory = root.join(".github/ISSUE_TEMPLATE/nested")
+      nested_directory.mkpath
+      nested_directory.join("hidden.yml").write(<<~YAML)
+        name: Hidden form
+        description: GitHub does not discover nested issue forms.
+        body:
+          - type: input
+            attributes:
+              label: Response
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template must be stored directly in .github/ISSUE_TEMPLATE: .github/ISSUE_TEMPLATE/nested/hidden.yml"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

@@ -6,6 +6,7 @@ require "yaml"
 
 DEFAULT_ROOT = Pathname(__dir__).join("..").expand_path
 ROOT = Pathname(ENV.fetch("COMMUNITY_FILES_ROOT", DEFAULT_ROOT.to_s)).expand_path
+ISSUE_TEMPLATE_DIRECTORY = ".github/ISSUE_TEMPLATE"
 REQUIRED_FILES = %w[
   CODE_OF_CONDUCT.md
   CONTRIBUTING.md
@@ -58,21 +59,79 @@ def issue_form_reference(value)
     .gsub(/\A-+|-+\z/, "")
 end
 
+def duplicate_yaml_mapping_keys(node, duplicates = [])
+  children = node.children
+  return duplicates unless children
+
+  if node.is_a?(Psych::Nodes::Mapping)
+    seen_keys = {}
+    children.each_slice(2) do |key_node, value_node|
+      if key_node.is_a?(Psych::Nodes::Scalar)
+        key = key_node.value
+        duplicates << key if seen_keys.key?(key)
+        seen_keys[key] = true
+      end
+
+      duplicate_yaml_mapping_keys(key_node, duplicates)
+      duplicate_yaml_mapping_keys(value_node, duplicates)
+    end
+  else
+    children.each { |child| duplicate_yaml_mapping_keys(child, duplicates) }
+  end
+
+  duplicates
+end
+
+def path_inside_repository?(path)
+  repository_path = ROOT.realpath
+  resolved_path = path.realpath
+
+  resolved_path == repository_path ||
+    resolved_path.to_s.start_with?("#{repository_path}#{File::SEPARATOR}")
+rescue SystemCallError
+  false
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
   path = ROOT.join(relative_path)
-  errors << "Missing required file: #{relative_path}" unless path.file?
+  unless path.file?
+    errors << "Missing required file: #{relative_path}"
+    next
+  end
+
+  errors << "Required file resolves outside repository: #{relative_path}" unless path_inside_repository?(path)
 end
 
 yaml_files = ROOT.glob(".github/**/*.{yml,yaml}").sort
 yaml_documents = {}
 
+ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/**/*.{md,yml,yaml}").sort.each do |path|
+  relative_path = path.relative_path_from(ROOT).to_s
+  next if Pathname(relative_path).dirname.to_s == ISSUE_TEMPLATE_DIRECTORY
+
+  errors << "Issue template must be stored directly in #{ISSUE_TEMPLATE_DIRECTORY}: #{relative_path}"
+end
+
 yaml_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
 
+  unless path_inside_repository?(path)
+    errors << "YAML file resolves outside repository: #{relative_path}"
+    next
+  end
+
   begin
-    yaml_documents[relative_path] = YAML.safe_load(path.read, aliases: false)
+    contents = path.read
+    yaml_stream = Psych.parse_stream(contents)
+    unless yaml_stream.children.length == 1
+      errors << "YAML file must contain exactly one document: #{relative_path}"
+    end
+    duplicate_yaml_mapping_keys(yaml_stream).uniq.each do |key|
+      errors << "Duplicate YAML key #{key} in #{relative_path}"
+    end
+    yaml_documents[relative_path] = YAML.safe_load(contents, aliases: false)
   rescue Psych::Exception => error
     errors << "Invalid YAML in #{relative_path}: #{error.message.lines.first.strip}"
   end
@@ -89,7 +148,8 @@ end
 issue_forms = yaml_documents.select do |relative_path, _document|
   relative_path.start_with?(".github/ISSUE_TEMPLATE/") &&
     relative_path.end_with?(".yml") &&
-    !relative_path.end_with?("/config.yml")
+    !relative_path.end_with?("/config.yml") &&
+    Pathname(relative_path).dirname.to_s == ISSUE_TEMPLATE_DIRECTORY
 end
 
 issue_forms.each do |relative_path, form|
@@ -370,6 +430,64 @@ issue_forms.each do |relative_path, form|
   end
 end
 
+issue_template_names = issue_forms.each_with_object([]) do |(relative_path, form), names|
+  next unless form.is_a?(Hash)
+
+  name = form["name"]
+  next unless name.is_a?(String) && !name.strip.empty?
+
+  names << [relative_path, name.strip]
+end
+ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
+  next unless path_inside_repository?(path)
+
+  relative_path = path.relative_path_from(ROOT).to_s
+  lines = path.read.lines
+  unless lines.first&.strip == "---"
+    errors << "Classic issue template #{relative_path} needs YAML front matter"
+    next
+  end
+
+  closing_index = lines.drop(1).index { |line| line.strip == "---" }
+  unless closing_index
+    errors << "Classic issue template #{relative_path} has unterminated YAML front matter"
+    next
+  end
+
+  begin
+    front_matter = lines[1, closing_index].join
+    duplicate_yaml_mapping_keys(Psych.parse_stream(front_matter)).uniq.each do |key|
+      errors << "Duplicate YAML front matter key #{key} in #{relative_path}"
+    end
+    metadata = YAML.safe_load(front_matter, aliases: false)
+  rescue Psych::Exception => error
+    errors << "Invalid YAML front matter in #{relative_path}: #{error.message.lines.first.strip}"
+    next
+  end
+  unless metadata.is_a?(Hash)
+    errors << "Classic issue template #{relative_path} front matter must be a mapping"
+    next
+  end
+
+  %w[name about].each do |field|
+    value = metadata[field]
+    unless value.is_a?(String) && !value.strip.empty?
+      errors << "Classic issue template #{relative_path} needs #{field}"
+    end
+  end
+
+  name = metadata["name"]
+  next unless name.is_a?(String) && !name.strip.empty?
+
+  issue_template_names << [relative_path, name.strip]
+end
+issue_template_names.group_by { |_relative_path, name| name.unicode_normalize(:nfkc).downcase }.each_value do |entries|
+  next unless entries.length > 1
+
+  paths = entries.map(&:first).join(", ")
+  errors << "Issue template name #{entries.first.last} is repeated in #{paths}"
+end
+
 issue_template_config = yaml_documents[".github/ISSUE_TEMPLATE/config.yml"]
 
 if issue_template_config.is_a?(Hash)
@@ -406,6 +524,7 @@ if issue_template_config.is_a?(Hash)
     end
 
     url = link["url"]
+    uri = nil
     valid_url = begin
       uri = URI.parse(url.to_s)
       url.is_a?(String) && uri.scheme == "https" && !uri.host.to_s.empty?
@@ -414,13 +533,15 @@ if issue_template_config.is_a?(Hash)
     end
     unless valid_url
       errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
+    else
+      errors << "Issue template contact link #{index + 1} URL must not include user information" if uri.userinfo
     end
   end
 elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
   errors << "Issue template config must be a mapping"
 end
 
-markdown_files = ROOT.glob("**/*.md").reject do |path|
+markdown_files = ROOT.glob("**/*.md", File::FNM_DOTMATCH).reject do |path|
   path.each_filename.any? { |part| part == ".git" }
 end.sort
 markdown_link_count = 0
@@ -428,19 +549,62 @@ markdown_link_count = 0
 markdown_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
 
-  path.read.scan(/\[[^\]]*\]\(([^)]+)\)/).flatten.each do |raw_target|
+  unless path_inside_repository?(path)
+    errors << "Markdown file resolves outside repository: #{relative_path}"
+    next
+  end
+
+  contents = path.read
+  inline_targets = contents.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
+  reference_definitions = contents.scan(
+    /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
+  )
+  reference_targets = reference_definitions.map do |_label, angle_target, bare_target|
+    angle_target || bare_target
+  end
+  normalize_reference = lambda do |value|
+    value.strip.gsub(/[ \t\r\n]+/, " ").downcase
+  end
+  defined_references = reference_definitions.map do |label, _angle_target, _bare_target|
+    normalize_reference.call(label)
+  end
+  contents.scan(/\[([^\]\n]+)\]\[([^\]\n]*)\]/).each do |text, label|
+    reference = label.empty? ? text : label
+    next if defined_references.include?(normalize_reference.call(reference))
+
+    errors << "Undefined Markdown link reference in #{relative_path}: #{reference}"
+  end
+
+  (inline_targets + reference_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
-    next if target.empty? || target.start_with?("#")
+    if target.empty?
+      errors << "Empty Markdown link target in #{relative_path}"
+      next
+    end
+    next if target.start_with?("#")
 
     markdown_link_count += 1
 
     if target.match?(/\Ahttps?:\/\//)
       uri = URI.parse(target)
       errors << "External link lacks a host in #{relative_path}: #{target}" unless uri.host
+      unless uri.scheme == "https"
+        errors << "External link must use HTTPS in #{relative_path}: #{target}"
+      end
+      if uri.userinfo
+        errors << "External link includes user information in #{relative_path}: #{target}"
+      end
       next
     end
 
-    next if target.start_with?("mailto:")
+    if target.start_with?("mailto:")
+      raw_recipient = target.delete_prefix("mailto:").partition("?").first
+      recipient = URI::DEFAULT_PARSER.unescape(raw_recipient).strip
+      if recipient.empty?
+        errors << "Mail link needs a recipient in #{relative_path}: #{target}"
+      end
+      next
+    end
 
     if target.match?(/\A[a-z][a-z0-9+.-]*:/i)
       errors << "Unsupported link scheme in #{relative_path}: #{target}"
@@ -461,7 +625,14 @@ markdown_files.each do |path|
       next
     end
 
-    errors << "Broken relative link in #{relative_path}: #{target}" unless destination.exist?
+    unless destination.exist?
+      errors << "Broken relative link in #{relative_path}: #{target}"
+      next
+    end
+
+    unless path_inside_repository?(destination)
+      errors << "Relative link escapes repository in #{relative_path}: #{target}"
+    end
   rescue URI::InvalidURIError
     errors << "Invalid link in #{relative_path}: #{target}"
   end
