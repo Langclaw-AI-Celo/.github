@@ -1020,6 +1020,37 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_multiple_yaml_documents
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: First document
+        description: This document is valid by itself.
+        body:
+          - type: input
+            attributes:
+              label: Response
+        ---
+        name: Ignored document
+        description: Psych safe_load ignores this document.
+        body:
+          - type: input
+            attributes:
+              label: Ignored response
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "YAML file must contain exactly one document: .github/ISSUE_TEMPLATE/bug_report.yml"
+    end
+  end
+
   private
 
   def copy_profile_files(destination)

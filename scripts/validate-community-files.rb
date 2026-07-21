@@ -116,7 +116,11 @@ yaml_files.each do |path|
 
   begin
     contents = path.read
-    duplicate_yaml_mapping_keys(Psych.parse_stream(contents)).uniq.each do |key|
+    yaml_stream = Psych.parse_stream(contents)
+    unless yaml_stream.children.length == 1
+      errors << "YAML file must contain exactly one document: #{relative_path}"
+    end
+    duplicate_yaml_mapping_keys(yaml_stream).uniq.each do |key|
       errors << "Duplicate YAML key #{key} in #{relative_path}"
     end
     yaml_documents[relative_path] = YAML.safe_load(contents, aliases: false)
