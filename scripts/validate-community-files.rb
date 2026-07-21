@@ -597,7 +597,14 @@ markdown_files.each do |path|
       next
     end
 
-    next if target.start_with?("mailto:")
+    if target.start_with?("mailto:")
+      raw_recipient = target.delete_prefix("mailto:").partition("?").first
+      recipient = URI::DEFAULT_PARSER.unescape(raw_recipient).strip
+      if recipient.empty?
+        errors << "Mail link needs a recipient in #{relative_path}: #{target}"
+      end
+      next
+    end
 
     if target.match?(/\A[a-z][a-z0-9+.-]*:/i)
       errors << "Unsupported link scheme in #{relative_path}: #{target}"

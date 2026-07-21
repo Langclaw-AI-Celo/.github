@@ -1205,6 +1205,23 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_mailto_links_without_recipients
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write("[Missing email recipient](mailto:)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Mail link needs a recipient in README.md: mailto:"
+    end
+  end
+
   def test_rejects_issue_templates_in_nested_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
