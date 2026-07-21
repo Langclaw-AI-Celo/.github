@@ -58,6 +58,29 @@ def issue_form_reference(value)
     .gsub(/\A-+|-+\z/, "")
 end
 
+def duplicate_yaml_mapping_keys(node, duplicates = [])
+  children = node.children
+  return duplicates unless children
+
+  if node.is_a?(Psych::Nodes::Mapping)
+    seen_keys = {}
+    children.each_slice(2) do |key_node, value_node|
+      if key_node.is_a?(Psych::Nodes::Scalar)
+        key = key_node.value
+        duplicates << key if seen_keys.key?(key)
+        seen_keys[key] = true
+      end
+
+      duplicate_yaml_mapping_keys(key_node, duplicates)
+      duplicate_yaml_mapping_keys(value_node, duplicates)
+    end
+  else
+    children.each { |child| duplicate_yaml_mapping_keys(child, duplicates) }
+  end
+
+  duplicates
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
@@ -72,7 +95,11 @@ yaml_files.each do |path|
   relative_path = path.relative_path_from(ROOT).to_s
 
   begin
-    yaml_documents[relative_path] = YAML.safe_load(path.read, aliases: false)
+    contents = path.read
+    duplicate_yaml_mapping_keys(Psych.parse_stream(contents)).uniq.each do |key|
+      errors << "Duplicate YAML key #{key} in #{relative_path}"
+    end
+    yaml_documents[relative_path] = YAML.safe_load(contents, aliases: false)
   rescue Psych::Exception => error
     errors << "Invalid YAML in #{relative_path}: #{error.message.lines.first.strip}"
   end
