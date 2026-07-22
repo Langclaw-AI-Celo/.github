@@ -1001,6 +1001,25 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_reports_percent_encoded_null_bytes_as_invalid_links
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write("[Invalid target](%00)\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Invalid link in README.md: %00"
+      refute_includes stderr, "ArgumentError"
+      refute_includes stderr, "pathname contains null byte"
+    end
+  end
+
   def test_rejects_duplicate_yaml_mapping_keys
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

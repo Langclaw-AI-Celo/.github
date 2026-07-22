@@ -638,6 +638,11 @@ markdown_files.each do |path|
     end
 
     file_target = URI::DEFAULT_PARSER.unescape(target.split("#", 2).first)
+    if file_target.include?("\0")
+      errors << "Invalid link in #{relative_path}: #{target}"
+      next
+    end
+
     destination = if file_target.start_with?("/")
       ROOT.join(file_target.delete_prefix("/"))
     else
