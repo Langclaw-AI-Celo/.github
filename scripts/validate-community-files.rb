@@ -46,6 +46,17 @@ ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 ISSUE_FORM_FORBIDDEN_LABEL_PATTERN = /\bpasswords?\b/i
+HTML_ANCHOR_HREF_PATTERN = /
+  <a\b
+  (?:
+    \s+
+    (?!href\b)
+    [^\s"'=<>`\/]+
+    (?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?
+  )*
+  \s+href\s*=\s*
+  (?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))
+/ix
 
 def issue_form_reference(value)
   return unless value.is_a?(String)
@@ -61,6 +72,12 @@ end
 
 def normalized_issue_form_choice(value)
   value.strip.unicode_normalize(:nfkc).downcase
+end
+
+def html_anchor_targets(contents)
+  contents.scan(HTML_ANCHOR_HREF_PATTERN).map do |captures|
+    captures.compact.first
+  end
 end
 
 def duplicate_yaml_mapping_keys(node, duplicates = [])
@@ -564,6 +581,7 @@ markdown_files.each do |path|
   autolink_targets = contents.scan(
     /(?<!\]\()<((?:https?|mailto):[^<>\r\n]*)>/i
   ).flatten
+  html_targets = html_anchor_targets(contents)
   reference_definitions = contents.scan(
     /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
   )
@@ -583,7 +601,7 @@ markdown_files.each do |path|
     errors << "Undefined Markdown link reference in #{relative_path}: #{reference}"
   end
 
-  (inline_targets + autolink_targets + reference_targets).each do |raw_target|
+  (inline_targets + autolink_targets + html_targets + reference_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
     if target.empty?
       errors << "Empty Markdown link target in #{relative_path}"

@@ -1223,6 +1223,54 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unsafe_html_anchor_targets
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme = root.join("README.md")
+      readme.write(<<~MARKDOWN)
+        <a href="http://example.com/support">Insecure support</a>
+        <A HREF='javascript:alert(1)'>Unsafe action</A>
+        <a href=mailto:>Missing recipient</a>
+        <a href="">Missing target</a>
+        <a href="https://user@example.com/private">Misleading host</a>
+        <a href="../outside.md">Outside repository</a>
+        <a href="missing.md">Missing file</a>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://example.com/support"
+      assert_includes stderr,
+        "Unsupported link scheme in README.md: javascript:alert(1)"
+      assert_includes stderr, "Mail link needs a recipient in README.md: mailto:"
+      assert_includes stderr, "Empty Markdown link target in README.md"
+      assert_includes stderr,
+        "External link includes user information in README.md: https://user@example.com/private"
+      assert_includes stderr,
+        "Relative link escapes repository in README.md: ../outside.md"
+      assert_includes stderr, "Broken relative link in README.md: missing.md"
+
+      readme.write(<<~MARKDOWN)
+        <a data-href="http://ignored.example" href="https://example.com/support">Secure support</a>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_does_not_double_count_angle_wrapped_inline_destinations
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
