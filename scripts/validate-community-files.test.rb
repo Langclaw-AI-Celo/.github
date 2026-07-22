@@ -1202,6 +1202,54 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_insecure_markdown_autolinks
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Support: <http://example.com/support>
+        Email: <mailto:>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "External link must use HTTPS in README.md: http://example.com/support"
+      assert_includes stderr, "Mail link needs a recipient in README.md: mailto:"
+    end
+  end
+
+  def test_does_not_double_count_angle_wrapped_inline_destinations
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme = root.join("README.md")
+      readme.write("[Support](https://example.com/support)\n")
+
+      plain_stdout, plain_stderr, plain_status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert plain_status.success?, plain_stderr
+
+      readme.write("[Support](<https://example.com/support>)\n")
+      angle_stdout, angle_stderr, angle_status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert angle_status.success?, angle_stderr
+      assert_equal plain_stdout, angle_stdout
+    end
+  end
+
   def test_validates_markdown_links_in_hidden_github_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

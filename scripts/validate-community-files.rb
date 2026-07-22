@@ -561,6 +561,9 @@ markdown_files.each do |path|
 
   contents = path.read
   inline_targets = contents.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
+  autolink_targets = contents.scan(
+    /(?<!\]\()<((?:https?|mailto):[^<>\r\n]*)>/i
+  ).flatten
   reference_definitions = contents.scan(
     /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
   )
@@ -580,7 +583,7 @@ markdown_files.each do |path|
     errors << "Undefined Markdown link reference in #{relative_path}: #{reference}"
   end
 
-  (inline_targets + reference_targets).each do |raw_target|
+  (inline_targets + autolink_targets + reference_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
     if target.empty?
       errors << "Empty Markdown link target in #{relative_path}"
