@@ -59,6 +59,10 @@ def issue_form_reference(value)
     .gsub(/\A-+|-+\z/, "")
 end
 
+def normalized_issue_form_choice(value)
+  value.strip.unicode_normalize(:nfkc).downcase
+end
+
 def duplicate_yaml_mapping_keys(node, duplicates = [])
   children = node.children
   return duplicates unless children
@@ -308,15 +312,16 @@ issue_forms.each do |relative_path, form|
             next
           end
 
-          normalized_option = option.strip
-          if normalized_option.casecmp?("none")
+          displayed_option = option.strip
+          normalized_option = normalized_issue_form_choice(option)
+          if normalized_option == "none"
             errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option none"
           end
-          if attributes.key?("default") && normalized_option.casecmp?("n/a")
+          if attributes.key?("default") && normalized_option == "n/a"
             errors << "Issue form #{relative_path} body field #{field_number} dropdown uses reserved option n/a"
           end
           if seen_options[normalized_option]
-            errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{normalized_option}"
+            errors << "Issue form #{relative_path} body field #{field_number} dropdown repeats option #{displayed_option}"
           end
           seen_options[normalized_option] = true
         end

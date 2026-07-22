@@ -117,6 +117,63 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_case_and_unicode_equivalent_dropdown_options
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      form_path = root.join(".github/ISSUE_TEMPLATE/bug_report.yml")
+      form_path.write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: network
+            attributes:
+              label: Network
+              default: 0
+              options:
+                - " Celo "
+                - celo
+                - ＣＥＬＯ
+                - Ｎ／Ａ
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "bug_report.yml body field 1 dropdown repeats option celo"
+      assert_includes stderr, "bug_report.yml body field 1 dropdown repeats option ＣＥＬＯ"
+      assert_includes stderr, "bug_report.yml body field 1 dropdown uses reserved option n/a"
+
+      form_path.write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: dropdown
+            id: network
+            attributes:
+              label: Network
+              options:
+                - Celo
+                - Celo!
+                - Celo Mainnet
+                - Celo  Mainnet
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_non_boolean_dropdown_multiple
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
