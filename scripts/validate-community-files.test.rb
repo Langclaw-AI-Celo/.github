@@ -898,6 +898,51 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_unicode_equivalent_password_labels_on_text_fields
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Account Ｐａｓｓｗｏｒｄ
+          - type: textarea
+            attributes:
+              label: 𝙿𝚊𝚜𝚜𝚠𝚘𝚛𝚍𝚜 recovery notes
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 input label contains forbidden word password"
+      assert_includes stderr, "body field 2 textarea label contains forbidden word password"
+
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            attributes:
+              label: Celo 钱包 address
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_colliding_issue_form_references
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

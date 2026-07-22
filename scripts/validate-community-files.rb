@@ -299,7 +299,7 @@ issue_forms.each do |relative_path, form|
     end
     if %w[input textarea].include?(type) &&
         attribute_value.is_a?(String) &&
-        attribute_value.match?(ISSUE_FORM_FORBIDDEN_LABEL_PATTERN)
+        attribute_value.unicode_normalize(:nfkc).match?(ISSUE_FORM_FORBIDDEN_LABEL_PATTERN)
       errors << "Issue form #{relative_path} body field #{field_number} #{type} label contains forbidden word password"
     end
 
