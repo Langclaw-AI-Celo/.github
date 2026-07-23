@@ -1394,6 +1394,42 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_classic_issue_template_metadata
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/classic.md").write(<<~MARKDOWN)
+        ---
+        name: Bug
+        about: Report a bug with the classic template.
+        title:
+          - "[Bug]"
+        labels:
+          invalid: mapping
+        type: 7
+        assignees: false
+        unexpected: value
+        ---
+
+        Describe the bug.
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/classic.md has unpermitted key unexpected"
+      assert_includes stderr, "Classic issue template .github/ISSUE_TEMPLATE/classic.md name must contain more than 3 characters"
+      %w[title labels type assignees].each do |field|
+        assert_includes stderr,
+          "Classic issue template .github/ISSUE_TEMPLATE/classic.md #{field} must be a string"
+      end
+    end
+  end
+
   def test_rejects_insecure_external_markdown_links
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
