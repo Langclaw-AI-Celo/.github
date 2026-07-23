@@ -780,6 +780,37 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_duplicate_contact_link_names_and_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Support
+            url: https://github.com/Langclaw-AI-Celo/.github/discussions
+            about: Ask a support question.
+          - name: ＳＵＰＰＯＲＴ
+            url: https://github.com/Langclaw-AI-Celo/.github/blob/main/SUPPORT.md
+            about: Read the support policy.
+          - name: Documentation
+            url: https://github.com/Langclaw-AI-Celo/.github/discussions
+            about: Browse common answers.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Issue template contact link 2 repeats name ＳＵＰＰＯＲＴ"
+      assert_includes stderr,
+        "Issue template contact link 3 repeats URL https://github.com/Langclaw-AI-Celo/.github/discussions"
+    end
+  end
+
   def test_allows_omitted_issue_form_ids
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

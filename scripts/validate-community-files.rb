@@ -1074,6 +1074,9 @@ if issue_template_config.is_a?(Hash)
     contact_links = []
   end
 
+  seen_contact_link_names = {}
+  seen_contact_link_urls = {}
+
   contact_links.each_with_index do |link, index|
     unless link.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} must be a mapping"
@@ -1091,6 +1094,16 @@ if issue_template_config.is_a?(Hash)
       end
     end
 
+    name = link["name"]
+    if name.is_a?(String) && !name.strip.empty?
+      displayed_name = name.strip
+      normalized_name = displayed_name.unicode_normalize(:nfkc).downcase
+      if seen_contact_link_names[normalized_name]
+        errors << "Issue template contact link #{index + 1} repeats name #{displayed_name}"
+      end
+      seen_contact_link_names[normalized_name] = true
+    end
+
     url = link["url"]
     uri = nil
     valid_url = begin
@@ -1103,6 +1116,10 @@ if issue_template_config.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
     else
       errors << "Issue template contact link #{index + 1} URL must not include user information" if uri.userinfo
+      if seen_contact_link_urls[url]
+        errors << "Issue template contact link #{index + 1} repeats URL #{url}"
+      end
+      seen_contact_link_urls[url] = true
     end
   end
 elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
