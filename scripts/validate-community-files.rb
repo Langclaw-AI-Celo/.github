@@ -1227,7 +1227,7 @@ markdown_files.each do |path|
     angle_target || bare_target
   end
   normalize_reference = lambda do |value|
-    value.strip.gsub(/[ \t\r\n]+/, " ").downcase
+    value.strip.gsub(/[ \t\r\n]+/, " ").downcase(:fold)
   end
   defined_references = reference_definitions.map do |label, _angle_target, _bare_target|
     normalize_reference.call(label)
