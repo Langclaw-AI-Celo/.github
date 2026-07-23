@@ -2143,6 +2143,27 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_accepts_gfm_inline_link_title_delimiters
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      write_readme_fixture(root, <<~MARKDOWN)
+        [Double quoted](SUPPORT.md "Support")
+        [Single quoted](SUPPORT.md 'Support')
+        [Parenthesized](SUPPORT.md (Support))
+        [Angle destination](<SUPPORT.md> 'Support')
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_validates_markdown_links_in_hidden_github_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

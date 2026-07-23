@@ -641,6 +641,71 @@ def bare_markdown_url_targets(contents)
   end
 end
 
+def inline_markdown_targets(contents)
+  targets = []
+  search_from = 0
+
+  while (opening = contents.index("](", search_from))
+    cursor = opening + 2
+    depth = 1
+    quote = nil
+    angle_destination = false
+    escaped = false
+    target = String.new
+
+    while cursor < contents.length
+      character = contents[cursor]
+
+      if escaped
+        target << character
+        escaped = false
+      elsif character == "\\"
+        target << character
+        escaped = true
+      elsif quote
+        target << character
+        quote = nil if character == quote
+      elsif angle_destination
+        target << character
+        angle_destination = false if character == ">"
+      elsif character == '"' || character == "'"
+        target << character
+        quote = character
+      elsif character == "<" && target.strip.empty?
+        target << character
+        angle_destination = true
+      elsif character == "("
+        target << character
+        depth += 1
+      elsif character == ")"
+        depth -= 1
+        break if depth.zero?
+
+        target << character
+      else
+        target << character
+      end
+
+      cursor += 1
+    end
+
+    targets << target if depth.zero?
+    search_from = depth.zero? ? cursor + 1 : opening + 2
+  end
+
+  targets
+end
+
+def markdown_link_destination(raw_target)
+  target = raw_target.strip
+  titled_target = target.match(
+    /\A(?<destination><(?:\\.|[^<>\r\n])*>|\S+)[ \t\r\n]+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\((?:\\.|[^)\\])*\))\z/
+  )
+  target = titled_target[:destination] if titled_target
+
+  target.delete_prefix("<").delete_suffix(">")
+end
+
 def duplicate_yaml_mapping_keys(node, duplicates = [])
   children = node.children
   return duplicates unless children
@@ -1214,7 +1279,7 @@ markdown_files.each do |path|
   contents = path.read
   visible_markdown = mask_nonrendered_markdown(contents)
   visible_html = mask_nonrendered_markdown(contents, mask_html: false)
-  inline_targets = visible_markdown.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
+  inline_targets = inline_markdown_targets(visible_markdown)
   autolink_targets = visible_markdown.scan(
     /(?<!\]\()<((?:https?|mailto):[^<>\r\n]*)>/i
   ).flatten
@@ -1240,7 +1305,7 @@ markdown_files.each do |path|
   end
 
   (inline_targets + autolink_targets + html_targets + reference_targets + bare_url_targets).each do |raw_target|
-    target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
+    target = markdown_link_destination(raw_target)
     if target.empty?
       errors << "Empty Markdown link target in #{relative_path}"
       next
