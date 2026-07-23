@@ -2186,6 +2186,29 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_matches_reference_labels_with_unicode_case_folding
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme_path = root.join("README.md")
+      readme_path.write(<<~MARKDOWN)
+        #{readme_path.read}
+
+        Read the [security policy][STRASSE].
+
+        [Straße]: SECURITY.md
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_empty_inline_markdown_link_targets
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
