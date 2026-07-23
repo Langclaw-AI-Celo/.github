@@ -57,6 +57,32 @@ HTML_ANCHOR_HREF_PATTERN = /
   \s+href\s*=\s*
   (?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))
 /ix
+BARE_MARKDOWN_URL_PATTERN = %r{
+  (?<![A-Za-z0-9])
+  https?://
+  [^\s<>"'`]+
+}ix
+MARKDOWN_HTML_BLOCK_TAG_PATTERN = %r{
+  \A[ \t]{0,3}</?(?:
+    address|article|aside|base|basefont|blockquote|body|caption|center|col|
+    colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|
+    footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|
+    li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|
+    search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul
+  )(?:[ \t]+|/?>|(?:\r?\n)?\z)
+}ix
+MARKDOWN_HTML_COMPLETE_TAG_PATTERN = %r{
+  \A[ \t]{0,3}(?:
+    </[A-Za-z][A-Za-z0-9-]*[ \t]*>
+    |
+    <[A-Za-z][A-Za-z0-9-]*
+    (?:
+      [ \t]+[^\s<>"'=]+
+      (?:[ \t]*=[ \t]*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?
+    )*
+    [ \t]*/?>
+  )[ \t]*(?:\r?\n)?\z
+}x
 
 def issue_form_reference(value)
   return unless value.is_a?(String)
@@ -77,6 +103,477 @@ end
 def html_anchor_targets(contents)
   contents.scan(HTML_ANCHOR_HREF_PATTERN).map do |captures|
     captures.compact.first
+  end
+end
+
+def mask_markdown_text(value)
+  value.gsub(/[^\r\n]/, " ")
+end
+
+def markdown_blockquote_line(line)
+  depth = 0
+  remainder = line
+
+  loop do
+    prefix = remainder.match(/\A[ \t]{0,3}>[ \t]?/)
+    break unless prefix
+
+    depth += 1
+    remainder = remainder[prefix[0].length..-1] || ""
+  end
+
+  [depth, remainder]
+end
+
+def markdown_indent_width(value)
+  column = 0
+
+  value.each_char do |character|
+    column = if character == "\t"
+      column + (4 - (column % 4))
+    else
+      column + 1
+    end
+  end
+
+  column
+end
+
+def strip_markdown_indent(line, required_width)
+  column = 0
+
+  line.each_char.with_index do |character, index|
+    break unless character == " " || character == "\t"
+
+    column = if character == "\t"
+      column + (4 - (column % 4))
+    else
+      column + 1
+    end
+
+    return line[(index + 1)..-1] || "" if column >= required_width
+  end
+
+  nil
+end
+
+def markdown_list_item_content(line)
+  remainder = line
+  can_interrupt = nil
+  indented_code = false
+  list_indent = 0
+  list_item = false
+
+  loop do
+    marker = remainder.match(
+      /\A([ \t]{0,3})((?:[-+*])|(\d{1,9})[.)])([ \t]+)/
+    )
+    break unless marker
+
+    can_interrupt = marker[3].nil? || marker[3].to_i == 1 if can_interrupt.nil?
+    indented_code ||= markdown_indent_width(marker[4]) >= 5
+    list_item = true
+    list_indent += markdown_indent_width(marker[0])
+    remainder = remainder[marker[0].length..-1] || ""
+  end
+
+  {
+    can_interrupt: can_interrupt,
+    content: remainder,
+    indent: list_indent,
+    indented_code: indented_code,
+    list_item: list_item,
+  }
+end
+
+def markdown_fence_opening(line)
+  list_item = markdown_list_item_content(line)
+  return if list_item[:indented_code]
+
+  remainder = list_item[:content]
+
+  opening = remainder.match(/\A[ \t]{0,3}(`{3,}|~{3,})([^\r\n]*)/)
+  return unless opening
+
+  marker = opening[1]
+  info = opening[2]
+  return if marker.start_with?("`") && info.include?("`")
+
+  {
+    character: marker[0],
+    length: marker.length,
+    list_indent: list_item[:indent],
+  }
+end
+
+def markdown_html_block_opening(line, paragraph_open)
+  type_one = line.match(
+    /\A[ \t]{0,3}<(script|pre|style|textarea)(?:[ \t]+|>|(?:\r?\n)?\z)/i
+  )
+  if type_one
+    return {
+      end_pattern: %r{</#{Regexp.escape(type_one[1])}[ \t]*>}i,
+      ends_on_blank: false,
+    }
+  end
+
+  return { end_pattern: /-->/, ends_on_blank: false } if line.match?(
+    /\A[ \t]{0,3}<!--/
+  )
+  return { end_pattern: /\?>/, ends_on_blank: false } if line.match?(
+    /\A[ \t]{0,3}<\?/
+  )
+  return { end_pattern: />/, ends_on_blank: false } if line.match?(
+    /\A[ \t]{0,3}<![A-Z]/
+  )
+  return { end_pattern: /\]\]>/, ends_on_blank: false } if line.match?(
+    /\A[ \t]{0,3}<!\[CDATA\[/
+  )
+  return { end_pattern: nil, ends_on_blank: true } if line.match?(
+    MARKDOWN_HTML_BLOCK_TAG_PATTERN
+  )
+  return if paragraph_open
+  return unless line.match?(MARKDOWN_HTML_COMPLETE_TAG_PATTERN)
+
+  { end_pattern: nil, ends_on_blank: true }
+end
+
+def markdown_structural_line?(line)
+  return true if line.match?(/\A[ \t]{0,3}\#{1,6}(?:[ \t]+|\r?\n?\z)/)
+  return true if line.match?(
+    /\A[ \t]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})(?:\r?\n)?\z/
+  )
+  return true if line.match?(/\A[ \t]{0,3}(?:=+|-+)[ \t]*(?:\r?\n)?\z/)
+
+  false
+end
+
+def markdown_table_delimiter_line?(line)
+  return false unless line.include?("|")
+
+  value = line.strip
+  value = value[1..-1] if value.start_with?("|")
+  value = value[0...-1] if value.end_with?("|")
+  cells = value.split("|", -1)
+
+  !cells.empty? && cells.all? do |cell|
+    cell.match?(/\A[ \t]*:?-{3,}:?[ \t]*\z/)
+  end
+end
+
+def markdown_table_row_line?(line)
+  line.each_char.with_index.any? do |character, index|
+    character == "|" && !markdown_character_escaped?(line, index)
+  end
+end
+
+def mask_markdown_blocks(contents)
+  fence = nil
+  html_block = nil
+  paragraph_quote_depth = nil
+  table = false
+
+  contents.each_line.map do |line|
+    quote_depth, markdown_line = markdown_blockquote_line(line)
+
+    if fence
+      fence = nil if quote_depth < fence[:quote_depth]
+
+      fence_line = markdown_line
+      if fence && fence[:list_indent].positive? && !fence_line.strip.empty?
+        fence_line = strip_markdown_indent(fence_line, fence[:list_indent])
+        fence = nil unless fence_line
+      end
+
+      if fence
+        closing_fence = %r{
+          \A[ \t]{0,3}
+          #{Regexp.escape(fence[:character])}{#{fence[:length]},}
+          [ \t]*(?:\r?\n)?\z
+        }x
+        fence = nil if fence_line.match?(closing_fence)
+        paragraph_quote_depth = nil
+        next mask_markdown_text(line)
+      end
+    end
+
+    if html_block
+      html_block = nil if quote_depth < html_block[:quote_depth]
+
+      html_line = markdown_line
+      if html_block && html_block[:list_indent].positive? && !html_line.strip.empty?
+        html_line = strip_markdown_indent(html_line, html_block[:list_indent])
+        html_block = nil unless html_line
+      end
+
+      if html_block
+        if html_block[:ends_on_blank] && html_line.strip.empty?
+          html_block = nil
+        else
+          if html_block[:end_pattern] && html_line.match?(html_block[:end_pattern])
+            html_block = nil
+          end
+          paragraph_quote_depth = nil
+          next mask_markdown_text(line)
+        end
+      end
+    end
+
+    if table
+      if !markdown_line.strip.empty? && markdown_table_row_line?(markdown_line)
+        paragraph_quote_depth = nil
+        next line
+      end
+
+      table = false
+    end
+
+    opening = markdown_fence_opening(markdown_line)
+    if opening
+      fence = opening.merge(quote_depth: quote_depth)
+      paragraph_quote_depth = nil
+      next mask_markdown_text(line)
+    end
+
+    list_item = markdown_list_item_content(markdown_line)
+    if list_item[:indented_code]
+      paragraph_quote_depth = nil
+      next mask_markdown_text(line)
+    end
+
+    html_line = list_item[:content]
+    paragraph_open = paragraph_quote_depth == quote_depth && !list_item[:list_item]
+    html_opening = markdown_html_block_opening(html_line, paragraph_open)
+    if html_opening
+      html_block = html_opening.merge(
+        list_indent: list_item[:indent],
+        quote_depth: quote_depth,
+      )
+      if html_block[:end_pattern] && html_line.match?(html_block[:end_pattern])
+        html_block = nil
+      end
+      paragraph_quote_depth = nil
+      next mask_markdown_text(line)
+    end
+
+    if markdown_line.strip.empty?
+      paragraph_quote_depth = nil
+      next line
+    end
+
+    if paragraph_quote_depth == quote_depth && markdown_table_delimiter_line?(
+      markdown_line
+    )
+      table = true
+      paragraph_quote_depth = nil
+      next line
+    end
+
+    paragraph_quote_depth = nil if paragraph_quote_depth != quote_depth
+
+    if markdown_line.match?(/\A(?: {4}|\t)/)
+      unless paragraph_quote_depth == quote_depth
+        paragraph_quote_depth = nil
+        next mask_markdown_text(line)
+      end
+    end
+
+    paragraph_quote_depth = if markdown_structural_line?(list_item[:content])
+      nil
+    else
+      quote_depth
+    end
+    line
+  end.join
+end
+
+def markdown_character_escaped?(value, index)
+  backslashes = 0
+  cursor = index - 1
+
+  while cursor >= 0 && value[cursor] == "\\"
+    backslashes += 1
+    cursor -= 1
+  end
+
+  backslashes.odd?
+end
+
+def markdown_backtick_run(value, start_index, respect_escape: true)
+  index = start_index
+
+  while index < value.length
+    unless value[index] == "`" && (
+      !respect_escape || !markdown_character_escaped?(value, index)
+    )
+      index += 1
+      next
+    end
+
+    finish = index
+    finish += 1 while finish < value.length && value[finish] == "`"
+    return [index, finish - index]
+  end
+
+  nil
+end
+
+def mask_markdown_code_spans_in_block(block)
+  masked = block.dup
+  cursor = 0
+
+  while (opening = markdown_backtick_run(block, cursor))
+    opening_index, opening_length = opening
+    search_index = opening_index + opening_length
+    closing = nil
+
+    while (candidate = markdown_backtick_run(
+      block,
+      search_index,
+      respect_escape: false
+    ))
+      candidate_index, candidate_length = candidate
+      if candidate_length == opening_length
+        closing = candidate
+        break
+      end
+
+      search_index = candidate_index + candidate_length
+    end
+
+    unless closing
+      cursor = opening_index + opening_length
+      next
+    end
+
+    closing_index, closing_length = closing
+    span_length = closing_index + closing_length - opening_index
+    masked[opening_index, span_length] = mask_markdown_text(
+      block[opening_index, span_length]
+    )
+    cursor = closing_index + closing_length
+  end
+
+  masked
+end
+
+def mask_markdown_inline_block(block)
+  masked = mask_markdown_code_spans_in_block(block)
+  masked = masked
+    .gsub(/<!--.*?-->/m) { |match| mask_markdown_text(match) }
+    .sub(/<!--.*\z/m) { |match| mask_markdown_text(match) }
+    .gsub(/<a\b[^>]*>.*?<\/a\s*>/im) { |match| mask_markdown_text(match) }
+    .gsub(/<(code|pre)\b[^>]*>.*?<\/\1\s*>/im) do |match|
+      mask_markdown_text(match)
+    end
+
+  masked
+end
+
+def mask_markdown_table_row(line)
+  output = []
+  cell_start = 0
+
+  line.each_char.with_index do |character, index|
+    next unless character == "|" && !markdown_character_escaped?(line, index)
+
+    output << mask_markdown_inline_block(line[cell_start...index])
+    output << "|"
+    cell_start = index + 1
+  end
+
+  output << mask_markdown_inline_block(line[cell_start..-1] || "")
+  output.join
+end
+
+def mask_markdown_inline_content(contents)
+  output = []
+  block = []
+  block_quote_depth = nil
+  table = false
+
+  flush = lambda do
+    unless block.empty?
+      output << mask_markdown_inline_block(block.join)
+      block.clear
+    end
+    block_quote_depth = nil
+  end
+
+  contents.each_line do |line|
+    quote_depth, markdown_line = markdown_blockquote_line(line)
+    list_item = markdown_list_item_content(markdown_line)
+    content_line = list_item[:content]
+
+    if markdown_line.strip.empty?
+      flush.call
+      output << line
+      table = false
+      next
+    end
+
+    if table
+      if markdown_table_row_line?(markdown_line)
+        flush.call
+        output << mask_markdown_table_row(line)
+        next
+      end
+
+      table = false
+    end
+
+    if !block.empty? && markdown_table_delimiter_line?(markdown_line)
+      header = block.pop
+      flush.call
+      output << mask_markdown_table_row(header) if header
+      output << line
+      table = true
+      next
+    end
+
+    if block_quote_depth && quote_depth > block_quote_depth
+      flush.call
+    end
+
+    if list_item[:list_item] && (
+      block.empty? || list_item[:can_interrupt]
+    )
+      flush.call
+    end
+
+    if content_line.match?(/\A[ \t]{0,3}\#{1,6}(?:[ \t]+|\r?\n?\z)/)
+      flush.call
+      output << mask_markdown_inline_block(line)
+      next
+    end
+
+    if markdown_structural_line?(content_line)
+      block << line
+      flush.call
+      next
+    end
+
+    block_quote_depth = quote_depth
+    block << line
+  end
+
+  flush.call
+  output.join
+end
+
+def bare_markdown_url_targets(contents)
+  visible_contents = mask_markdown_blocks(contents)
+  visible_contents = mask_markdown_inline_content(visible_contents)
+
+  visible_contents.each_line.flat_map do |line|
+    next [] if line.match?(/\A[ \t]{0,3}\[(?!\^)[^\]\n]+\]:/)
+
+    rendered_text = line
+      .gsub(/!?\[[^\]\n]*\]\([^\)\n]*\)/, " ")
+      .gsub(/\[[^\]\n]+\]\[[^\]\n]*\]/, " ")
+      .gsub(/<[^>\n]*>/, " ")
+
+    rendered_text.scan(BARE_MARKDOWN_URL_PATTERN)
   end
 end
 
@@ -582,6 +1079,7 @@ markdown_files.each do |path|
     /(?<!\]\()<((?:https?|mailto):[^<>\r\n]*)>/i
   ).flatten
   html_targets = html_anchor_targets(contents)
+  bare_url_targets = bare_markdown_url_targets(contents)
   reference_definitions = contents.scan(
     /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
   )
@@ -601,7 +1099,7 @@ markdown_files.each do |path|
     errors << "Undefined Markdown link reference in #{relative_path}: #{reference}"
   end
 
-  (inline_targets + autolink_targets + html_targets + reference_targets).each do |raw_target|
+  (inline_targets + autolink_targets + html_targets + reference_targets + bare_url_targets).each do |raw_target|
     target = raw_target.strip.sub(/\s+"[^"]*"\z/, "").delete_prefix("<").delete_suffix(">")
     if target.empty?
       errors << "Empty Markdown link target in #{relative_path}"
@@ -611,10 +1109,10 @@ markdown_files.each do |path|
 
     markdown_link_count += 1
 
-    if target.match?(/\Ahttps?:\/\//)
+    if target.match?(/\Ahttps?:\/\//i)
       uri = URI.parse(target)
       errors << "External link lacks a host in #{relative_path}: #{target}" unless uri.host
-      unless uri.scheme == "https"
+      unless uri.scheme.to_s.casecmp?("https")
         errors << "External link must use HTTPS in #{relative_path}: #{target}"
       end
       if uri.userinfo

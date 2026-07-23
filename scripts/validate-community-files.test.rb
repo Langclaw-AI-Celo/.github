@@ -1287,6 +1287,483 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_insecure_bare_urls_and_ignores_non_rendered_examples
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme = root.join("README.md")
+      ignored_examples = <<~MARKDOWN
+        Inline code: `http://inline.example/support`
+        Escaped text: http\\://escaped.example/support
+        <!-- http://comment.example/support -->
+
+        `Multiline code starts
+        http://multiline-code.example/support
+        and ends here`
+
+        ```text
+        http://fenced.example/support
+        ```
+
+        > ```text
+        > http://quoted-fence.example/support
+        > ```
+
+        >     http://quoted-indented.example/support
+
+        - ```text
+          http://listed-fence.example/support
+          ```
+
+        <div>
+        http://raw-html-block.example/support
+        </div>
+
+        ~~~text
+        ~~~~not-a-closing-fence
+        http://continued-fence.example/support
+        ~~~
+      MARKDOWN
+      readme.write("Insecure prose: http://example.com/support\n#{ignored_examples}")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator accepted a rendered bare HTTP URL"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://example.com/support"
+      refute_includes stderr, "http://inline.example/support"
+      refute_includes stderr, "http://escaped.example/support"
+      refute_includes stderr, "http://comment.example/support"
+      refute_includes stderr, "http://fenced.example/support"
+      refute_includes stderr, "http://multiline-code.example/support"
+      refute_includes stderr, "http://quoted-fence.example/support"
+      refute_includes stderr, "http://quoted-indented.example/support"
+      refute_includes stderr, "http://listed-fence.example/support"
+      refute_includes stderr, "http://raw-html-block.example/support"
+      refute_includes stderr, "http://continued-fence.example/support"
+
+      readme.write(ignored_examples)
+      ignored_stdout, ignored_stderr, ignored_status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert ignored_status.success?, ignored_stderr
+      ignored_count = ignored_stdout.match(/and (\d+) Markdown links\./)[1].to_i
+
+      readme.write(<<~MARKDOWN)
+        Secure prose: https://example.com/support
+        Uppercase secure prose: HTTPS://secure.example/support
+        #{ignored_examples}
+      MARKDOWN
+      secure_stdout, secure_stderr, secure_status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert secure_status.success?, secure_stderr
+      secure_count = secure_stdout.match(/and (\d+) Markdown links\./)[1].to_i
+      assert_equal ignored_count + 2, secure_count
+    end
+  end
+
+  def test_rejects_bare_http_url_after_a_list_fence
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        - ```text
+          https://inside-list-code.example/support
+          ```
+
+        Active prose: http://after-list-fence.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator hid prose after a list fence"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://after-list-fence.example/support"
+      refute_includes stderr, "https://inside-list-code.example/support"
+    end
+  end
+
+  def test_rejects_bare_http_url_after_a_code_span_paragraph
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        `code starts
+
+        Active prose: http://after-code-paragraph.example/support
+        code ends`
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator masked a URL across a paragraph boundary"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://after-code-paragraph.example/support"
+    end
+  end
+
+  def test_rejects_bare_http_urls_across_nonblank_block_boundaries
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        `heading span starts
+        # Heading http://span-heading.example/support
+        heading span ends`
+
+        `list span starts
+        - http://span-list.example/support
+        list span ends`
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator masked URLs across Markdown block boundaries"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://span-heading.example/support"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://span-list.example/support"
+    end
+  end
+
+  def test_ignores_code_span_in_a_lazy_blockquote_continuation
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        > `code starts
+        http://lazy-quote-code.example/support
+        code ends`
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_rejects_bare_http_url_in_a_separate_table_cell
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        | A |
+        | --- |
+        | `start |
+        | http://table-cell-active.example/support ` |
+        | `http://table-cell-code.example/support` | http://table-row-active.example/support |
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator paired code delimiters across table cells"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://table-cell-active.example/support"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://table-row-active.example/support"
+      refute_includes stderr, "http://table-cell-code.example/support"
+    end
+  end
+
+  def test_ignores_indented_code_after_a_table
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        | A |
+        | --- |
+        | value |
+            http://after-table.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_rejects_bare_http_url_between_escaped_backticks
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(
+        "\\`literal http://escaped-backtick.example/support \\`\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator treated escaped backticks as code delimiters"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://escaped-backtick.example/support"
+    end
+  end
+
+  def test_rejects_bare_http_url_after_a_backslash_inside_code
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(
+        "`code \\` Active http://after-code.example/support `\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator extended a code span past its real closer"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://after-code.example/support"
+    end
+  end
+
+  def test_rejects_bare_http_url_in_an_indented_paragraph_continuation
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Paragraph continuation
+            http://indented-continuation.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator treated paragraph prose as an indented code block"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://indented-continuation.example/support"
+    end
+  end
+
+  def test_ignores_plain_url_text_in_raw_html_blocks
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        <div>
+        http://raw-html-block.example/support
+        </div>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_ignores_indented_code_after_an_atx_heading
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        # Finished heading
+            http://after-heading.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_ignores_indented_code_after_list_markers
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        -     http://list-indented.example/support
+        1.     http://ordered-indented.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_keeps_noninterrupting_ordered_marker_inside_a_code_span
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        `code starts
+        2. http://ordered-noninterrupt.example/support
+        code ends`
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_ignores_gfm_raw_html_block_variants
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        <script
+        http://script-block.example/support
+        </script>
+
+        <x-widget>
+        http://custom-block.example/support
+        </x-widget>
+
+        - <div>
+          http://listed-html-block.example/support
+          </div>
+
+        <div
+        http://unterminated-div-block.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_rejects_bare_http_urls_after_markup_inside_fences
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        ```html
+        <!--
+        ```
+        Active prose: http://after-comment-fence.example/support
+
+        ```html
+        <div>
+        ```
+        Active prose: http://after-html-fence.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator let fenced markup mask following prose"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://after-comment-fence.example/support"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://after-html-fence.example/support"
+    end
+  end
+
+  def test_rejects_bare_http_urls_after_rendered_boundaries
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Backslash boundary: \\http://backslash.example/support
+        Underscore boundary: _http://underscore.example/support
+        Unicode boundary: éhttp://unicode-boundary.example/support
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator accepted rendered bare HTTP URLs"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://backslash.example/support"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://underscore.example/support"
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://unicode-boundary.example/support"
+    end
+  end
+
+  def test_reports_malformed_bare_external_urls_without_a_stack_trace
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      malformed_url = "https://example.com/%ZZ"
+      root.join("README.md").write("Malformed prose: #{malformed_url}\n")
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?, "validator accepted a malformed bare URL"
+      assert_includes stderr,
+        "Invalid link in README.md: #{malformed_url}"
+      refute_includes stderr, "URI::InvalidURIError"
+      refute_includes stderr, "validate-community-files.rb:"
+    end
+  end
+
   def test_rejects_unsafe_html_anchor_targets
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
