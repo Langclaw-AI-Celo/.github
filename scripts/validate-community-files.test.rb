@@ -1303,6 +1303,26 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_ignores_html_anchor_examples_inside_attributes
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        <div title='<a href="http://attribute.example/support">'>
+        Safe text
+        </div>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_insecure_markdown_autolinks
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
@@ -1846,6 +1866,27 @@ class CommunityFilesValidatorTest < Minitest::Test
       )
 
       assert status.success?, stderr
+    end
+  end
+
+  def test_rejects_unsafe_html_anchor_after_less_than_prose
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Keep usage < user's daily limit.
+        <a href="http://example.com/support">Insecure support</a>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "External link must use HTTPS in README.md: http://example.com/support"
     end
   end
 

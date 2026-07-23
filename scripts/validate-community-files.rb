@@ -47,7 +47,7 @@ ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 ISSUE_FORM_FORBIDDEN_LABEL_PATTERN = /\bpasswords?\b/i
 HTML_ANCHOR_HREF_PATTERN = /
-  <a\b
+  \A<a\b
   (?:
     \s+
     (?!href\b)
@@ -100,9 +100,46 @@ def normalized_issue_form_choice(value)
   value.strip.unicode_normalize(:nfkc).downcase
 end
 
+def html_tag_tokens(contents)
+  tags = []
+  tag = nil
+  quote = nil
+
+  contents.each_char do |character|
+    if tag.nil?
+      tag = String.new("<") if character == "<"
+      next
+    end
+
+    if quote.nil? && character == "<"
+      tag = String.new("<")
+      next
+    end
+
+    if tag == "<" && !character.match?(/[A-Za-z]/)
+      tag = nil
+      next
+    end
+
+    tag << character
+
+    if quote
+      quote = nil if character == quote
+    elsif character == '"' || character == "'"
+      quote = character
+    elsif character == ">"
+      tags << tag
+      tag = nil
+    end
+  end
+
+  tags
+end
+
 def html_anchor_targets(contents)
-  contents.scan(HTML_ANCHOR_HREF_PATTERN).map do |captures|
-    captures.compact.first
+  html_tag_tokens(contents).each_with_object([]) do |tag, targets|
+    match = tag.match(HTML_ANCHOR_HREF_PATTERN)
+    targets << match.captures.compact.first if match
   end
 end
 
