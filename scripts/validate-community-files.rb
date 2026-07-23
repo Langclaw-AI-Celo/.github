@@ -1028,7 +1028,7 @@ issue_forms.each do |relative_path, form|
         issue_form_reference(option["label"])
       end.compact)
     end
-    references.compact.reject(&:empty?)
+    references.select { |reference| reference.is_a?(String) && !reference.empty? }
   end
   duplicate_references = field_references
     .group_by(&:itself)

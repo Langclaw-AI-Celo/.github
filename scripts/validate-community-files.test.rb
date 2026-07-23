@@ -159,6 +159,32 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_non_string_issue_form_ids_without_crashing
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/bug_report.yml").write(<<~YAML)
+        name: Bug report
+        description: Report a reproducible problem.
+        body:
+          - type: input
+            id: 7
+            attributes:
+              label: Reproduction
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "body field 1 has invalid id 7"
+      refute_includes stderr, "NoMethodError"
+    end
+  end
+
   def test_rejects_invalid_issue_form_options
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
