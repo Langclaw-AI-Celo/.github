@@ -683,6 +683,12 @@ rescue SystemCallError
   false
 end
 
+def uri_port_in_range?(uri)
+  uri.port.between?(0, 65_535)
+rescue URI::InvalidComponentError
+  false
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
@@ -1171,7 +1177,10 @@ if issue_template_config.is_a?(Hash)
     uri = nil
     valid_url = begin
       uri = URI.parse(url.to_s)
-      url.is_a?(String) && uri.scheme == "https" && !uri.host.to_s.empty?
+      url.is_a?(String) &&
+        uri.scheme == "https" &&
+        !uri.host.to_s.empty? &&
+        uri_port_in_range?(uri)
     rescue URI::InvalidURIError
       false
     end
@@ -1248,6 +1257,9 @@ markdown_files.each do |path|
       end
       if uri.userinfo
         errors << "External link includes user information in #{relative_path}: #{target}"
+      end
+      unless uri_port_in_range?(uri)
+        errors << "External link has an invalid port in #{relative_path}: #{target}"
       end
       next
     end
