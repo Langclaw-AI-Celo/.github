@@ -1264,8 +1264,8 @@ markdown_files.each do |path|
       next
     end
 
-    if target.start_with?("mailto:")
-      raw_recipient = target.delete_prefix("mailto:").partition("?").first
+    if target.match?(/\Amailto:/i)
+      raw_recipient = target.sub(/\Amailto:/i, "").partition("?").first
       recipient = URI::DEFAULT_PARSER.unescape(raw_recipient).strip
       if recipient.empty?
         errors << "Mail link needs a recipient in #{relative_path}: #{target}"
