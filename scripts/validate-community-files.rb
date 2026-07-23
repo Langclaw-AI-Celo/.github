@@ -267,7 +267,7 @@ def markdown_table_row_line?(line)
   end
 end
 
-def mask_markdown_blocks(contents)
+def mask_markdown_blocks(contents, mask_html: true)
   fence = nil
   html_block = nil
   paragraph_quote_depth = nil
@@ -314,7 +314,7 @@ def mask_markdown_blocks(contents)
             html_block = nil
           end
           paragraph_quote_depth = nil
-          next mask_markdown_text(line)
+          next mask_html ? mask_markdown_text(line) : line
         end
       end
     end
@@ -353,7 +353,7 @@ def mask_markdown_blocks(contents)
         html_block = nil
       end
       paragraph_quote_depth = nil
-      next mask_markdown_text(line)
+      next mask_html ? mask_markdown_text(line) : line
     end
 
     if markdown_line.strip.empty?
@@ -457,36 +457,44 @@ def mask_markdown_code_spans_in_block(block)
   masked
 end
 
-def mask_markdown_inline_block(block)
+def mask_markdown_inline_block(block, mask_html: true)
   masked = mask_markdown_code_spans_in_block(block)
   masked = masked
     .gsub(/<!--.*?-->/m) { |match| mask_markdown_text(match) }
     .sub(/<!--.*\z/m) { |match| mask_markdown_text(match) }
+
+  return masked unless mask_html
+
+  masked
     .gsub(/<a\b[^>]*>.*?<\/a\s*>/im) { |match| mask_markdown_text(match) }
     .gsub(/<(code|pre)\b[^>]*>.*?<\/\1\s*>/im) do |match|
       mask_markdown_text(match)
     end
-
-  masked
 end
 
-def mask_markdown_table_row(line)
+def mask_markdown_table_row(line, mask_html: true)
   output = []
   cell_start = 0
 
   line.each_char.with_index do |character, index|
     next unless character == "|" && !markdown_character_escaped?(line, index)
 
-    output << mask_markdown_inline_block(line[cell_start...index])
+    output << mask_markdown_inline_block(
+      line[cell_start...index],
+      mask_html: mask_html,
+    )
     output << "|"
     cell_start = index + 1
   end
 
-  output << mask_markdown_inline_block(line[cell_start..-1] || "")
+  output << mask_markdown_inline_block(
+    line[cell_start..-1] || "",
+    mask_html: mask_html,
+  )
   output.join
 end
 
-def mask_markdown_inline_content(contents)
+def mask_markdown_inline_content(contents, mask_html: true)
   output = []
   block = []
   block_quote_depth = nil
@@ -494,7 +502,7 @@ def mask_markdown_inline_content(contents)
 
   flush = lambda do
     unless block.empty?
-      output << mask_markdown_inline_block(block.join)
+      output << mask_markdown_inline_block(block.join, mask_html: mask_html)
       block.clear
     end
     block_quote_depth = nil
@@ -515,7 +523,7 @@ def mask_markdown_inline_content(contents)
     if table
       if markdown_table_row_line?(markdown_line)
         flush.call
-        output << mask_markdown_table_row(line)
+        output << mask_markdown_table_row(line, mask_html: mask_html)
         next
       end
 
@@ -525,7 +533,7 @@ def mask_markdown_inline_content(contents)
     if !block.empty? && markdown_table_delimiter_line?(markdown_line)
       header = block.pop
       flush.call
-      output << mask_markdown_table_row(header) if header
+      output << mask_markdown_table_row(header, mask_html: mask_html) if header
       output << line
       table = true
       next
@@ -543,7 +551,7 @@ def mask_markdown_inline_content(contents)
 
     if content_line.match?(/\A[ \t]{0,3}\#{1,6}(?:[ \t]+|\r?\n?\z)/)
       flush.call
-      output << mask_markdown_inline_block(line)
+      output << mask_markdown_inline_block(line, mask_html: mask_html)
       next
     end
 
@@ -561,9 +569,13 @@ def mask_markdown_inline_content(contents)
   output.join
 end
 
+def mask_nonrendered_markdown(contents, mask_html: true)
+  visible_contents = mask_markdown_blocks(contents, mask_html: mask_html)
+  mask_markdown_inline_content(visible_contents, mask_html: mask_html)
+end
+
 def bare_markdown_url_targets(contents)
-  visible_contents = mask_markdown_blocks(contents)
-  visible_contents = mask_markdown_inline_content(visible_contents)
+  visible_contents = mask_nonrendered_markdown(contents)
 
   visible_contents.each_line.flat_map do |line|
     next [] if line.match?(/\A[ \t]{0,3}\[(?!\^)[^\]\n]+\]:/)
@@ -1074,13 +1086,15 @@ markdown_files.each do |path|
   end
 
   contents = path.read
-  inline_targets = contents.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
-  autolink_targets = contents.scan(
+  visible_markdown = mask_nonrendered_markdown(contents)
+  visible_html = mask_nonrendered_markdown(contents, mask_html: false)
+  inline_targets = visible_markdown.scan(/\[[^\]]*\]\(([^)]*)\)/).flatten
+  autolink_targets = visible_markdown.scan(
     /(?<!\]\()<((?:https?|mailto):[^<>\r\n]*)>/i
   ).flatten
-  html_targets = html_anchor_targets(contents)
+  html_targets = html_anchor_targets(visible_html)
   bare_url_targets = bare_markdown_url_targets(contents)
-  reference_definitions = contents.scan(
+  reference_definitions = visible_markdown.scan(
     /^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:<([^>\n]+)>|(\S+))/
   )
   reference_targets = reference_definitions.map do |_label, angle_target, bare_target|
@@ -1092,7 +1106,7 @@ markdown_files.each do |path|
   defined_references = reference_definitions.map do |label, _angle_target, _bare_target|
     normalize_reference.call(label)
   end
-  contents.scan(/\[([^\]\n]+)\]\[([^\]\n]*)\]/).each do |text, label|
+  visible_markdown.scan(/\[([^\]\n]+)\]\[([^\]\n]*)\]/).each do |text, label|
     reference = label.empty? ? text : label
     next if defined_references.include?(normalize_reference.call(reference))
 
