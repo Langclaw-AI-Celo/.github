@@ -2220,6 +2220,40 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_treats_mailto_schemes_case_insensitively
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme_path = root.join("README.md")
+      readme_path.write(
+        "#{readme_path.read}\n[Security contact](MAILTO:security@example.com)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+
+      readme_path.write(readme_path.read.sub(
+        "MAILTO:security@example.com",
+        "MAILTO:"
+      ))
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Mail link needs a recipient in README.md: MAILTO:"
+      refute_includes stderr, "Unsupported link scheme"
+    end
+  end
+
   def test_rejects_issue_templates_in_nested_directories
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
