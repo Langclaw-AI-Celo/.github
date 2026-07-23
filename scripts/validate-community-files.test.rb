@@ -1286,6 +1286,52 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_out_of_range_ports_in_public_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      invalid_url = "https://example.com:99999/support"
+      write_readme_fixture(
+        root,
+        "[Invalid port](#{invalid_url})"
+      )
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Invalid port
+            url: #{invalid_url}
+            about: This port is outside the valid network range.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template contact link 1 needs an HTTPS URL"
+      assert_includes stderr,
+        "External link has an invalid port in README.md: #{invalid_url}"
+
+      valid_url = "https://example.com:65535/support"
+      root.join("README.md").write(
+        root.join("README.md").read.sub(invalid_url, valid_url)
+      )
+      config_path = root.join(".github/ISSUE_TEMPLATE/config.yml")
+      config_path.write(config_path.read.sub(invalid_url, valid_url))
+
+      _stdout, valid_stderr, valid_status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert valid_status.success?, valid_stderr
+    end
+  end
+
   def test_rejects_multiple_yaml_documents
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
