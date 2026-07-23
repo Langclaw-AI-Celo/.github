@@ -44,6 +44,12 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
 ].freeze
 ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
+CLASSIC_ISSUE_TEMPLATE_KEYS = %w[
+  about assignees labels name title type
+].freeze
+CLASSIC_ISSUE_TEMPLATE_OPTIONAL_STRING_KEYS = %w[
+  assignees labels title type
+].freeze
 PUBLIC_IDENTIFIER_FILES = %w[README.md profile/README.md].freeze
 PUBLIC_IDENTIFIER_LABELS = [
   "`LangclawRegistry`",
@@ -1078,6 +1084,10 @@ ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
     next
   end
 
+  (metadata.keys - CLASSIC_ISSUE_TEMPLATE_KEYS).each do |key|
+    errors << "Classic issue template #{relative_path} has unpermitted key #{key}"
+  end
+
   %w[name about].each do |field|
     value = metadata[field]
     unless value.is_a?(String) && !value.strip.empty?
@@ -1086,6 +1096,18 @@ ROOT.glob("#{ISSUE_TEMPLATE_DIRECTORY}/*.md").sort.each do |path|
   end
 
   name = metadata["name"]
+  if name.is_a?(String) && !name.strip.empty? && name.strip.length <= 3
+    errors << "Classic issue template #{relative_path} name must contain more than 3 characters"
+  end
+
+  CLASSIC_ISSUE_TEMPLATE_OPTIONAL_STRING_KEYS.each do |field|
+    next unless metadata.key?(field)
+
+    unless metadata[field].is_a?(String)
+      errors << "Classic issue template #{relative_path} #{field} must be a string"
+    end
+  end
+
   next unless name.is_a?(String) && !name.strip.empty?
 
   issue_template_names << [relative_path, name.strip]
