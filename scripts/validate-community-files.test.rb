@@ -1266,6 +1266,43 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_ignores_markdown_link_syntax_in_non_rendered_code
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("README.md").write(<<~MARKDOWN)
+        Inline example: `[Support](http://inline-code.example/support)`
+        Inline HTML example: `<a href="http://inline-html.example/support">Support</a>`
+
+        ```markdown
+        [Support](http://fenced-code.example/support)
+        <http://fenced-autolink.example/support>
+        <a href="http://fenced-html.example/support">Support</a>
+        [guide]: http://fenced-reference.example/support
+        ```
+
+            [Support](http://indented-code.example/support)
+
+        <!--
+        [Support](http://comment.example/support)
+        <a href="http://comment-html.example/support">Support</a>
+        -->
+
+        <div>
+        [Support](http://raw-html.example/support)
+        </div>
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_insecure_markdown_autolinks
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
