@@ -44,6 +44,15 @@ ISSUE_FORM_UPLOAD_EXTENSIONS = %w[
 ].freeze
 ISSUE_TEMPLATE_CONFIG_KEYS = %w[blank_issues_enabled contact_links].freeze
 ISSUE_TEMPLATE_CONTACT_LINK_KEYS = %w[about name url].freeze
+PUBLIC_IDENTIFIER_FILES = %w[README.md profile/README.md].freeze
+PUBLIC_IDENTIFIER_LABELS = [
+  "`LangclawRegistry`",
+  "`LangclawTradingJournal`",
+  "`LangclawUsageVault`",
+  "Celo USDT deposit token",
+  "ERC-8004 identity registry",
+  "Agent owner / recorder"
+].freeze
 ISSUE_FORM_PROJECT_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[1-9]\d*\z/
 ISSUE_FORM_FORBIDDEN_LABEL_PATTERN = /\bpasswords?\b/i
 HTML_ANCHOR_HREF_PATTERN = /
@@ -649,6 +658,15 @@ def duplicate_yaml_mapping_keys(node, duplicates = [])
   duplicates
 end
 
+def markdown_table_values(contents, label)
+  visible_contents = mask_markdown_blocks(contents)
+
+  visible_contents.each_line.each_with_object([]) do |line, values|
+    columns = line.strip.split("|", -1).map(&:strip)
+    values << columns[2] if columns.length >= 4 && columns[1] == label
+  end
+end
+
 def path_inside_repository?(path)
   repository_path = ROOT.realpath
   resolved_path = path.realpath
@@ -669,6 +687,29 @@ REQUIRED_FILES.each do |relative_path|
   end
 
   errors << "Required file resolves outside repository: #{relative_path}" unless path_inside_repository?(path)
+end
+
+PUBLIC_IDENTIFIER_LABELS.each do |label|
+  displayed_label = label.delete("`")
+  values_by_file = {}
+
+  PUBLIC_IDENTIFIER_FILES.each do |relative_path|
+    path = ROOT.join(relative_path)
+    next unless path.file? && path_inside_repository?(path)
+
+    values = markdown_table_values(path.read, label)
+    if values.length != 1
+      errors << "Public identifier #{displayed_label} must appear exactly once in #{relative_path}"
+      next
+    end
+
+    values_by_file[relative_path] = values.first
+  end
+
+  next unless values_by_file.length == PUBLIC_IDENTIFIER_FILES.length
+  next if values_by_file.values.uniq.length == 1
+
+  errors << "Public identifier #{displayed_label} differs between #{PUBLIC_IDENTIFIER_FILES.join(" and ")}"
 end
 
 yaml_files = ROOT.glob(".github/**/*.{yml,yaml}").sort

@@ -10,6 +10,94 @@ REPOSITORY_ROOT = Pathname(__dir__).join("..").expand_path
 VALIDATOR = REPOSITORY_ROOT.join("scripts/validate-community-files.rb")
 
 class CommunityFilesValidatorTest < Minitest::Test
+  def test_rejects_missing_public_identifier
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      profile_path = root.join("profile/README.md")
+      profile_path.write(
+        profile_path.read.each_line.reject do |line|
+          line.start_with?("| `LangclawTradingJournal` |")
+        end.join
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Public identifier LangclawTradingJournal must appear exactly once in profile/README.md"
+    end
+  end
+
+  def test_rejects_duplicate_public_identifier
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme_path = root.join("README.md")
+      identifier_row = "| `LangclawRegistry` | `0xe69755e4249c4978c39fbe847ca9674ce7af3505` |"
+      readme_path.write(readme_path.read.sub(identifier_row, "#{identifier_row}\n#{identifier_row}"))
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Public identifier LangclawRegistry must appear exactly once in README.md"
+    end
+  end
+
+  def test_rejects_conflicting_public_identifier_values
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      profile_path = root.join("profile/README.md")
+      profile_path.write(
+        profile_path.read.sub(
+          "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
+          "0x1111111111111111111111111111111111111111"
+        )
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr, "Public identifier LangclawRegistry differs between README.md and profile/README.md"
+    end
+  end
+
+  def test_ignores_public_identifier_rows_in_code_examples
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      readme_path = root.join("README.md")
+      readme_path.write(<<~MARKDOWN)
+        #{readme_path.read}
+
+        ```markdown
+        | `LangclawRegistry` | `0x1111111111111111111111111111111111111111` |
+        ```
+      MARKDOWN
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_rejects_invalid_issue_template_config
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
@@ -1301,7 +1389,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         Inline example: `[Support](http://inline-code.example/support)`
         Inline HTML example: `<a href="http://inline-html.example/support">Support</a>`
 
@@ -1338,7 +1426,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         <div title='<a href="http://attribute.example/support">'>
         Safe text
         </div>
@@ -1434,7 +1522,7 @@ class CommunityFilesValidatorTest < Minitest::Test
       refute_includes stderr, "http://raw-html-block.example/support"
       refute_includes stderr, "http://continued-fence.example/support"
 
-      readme.write(ignored_examples)
+      write_readme_fixture(root, ignored_examples)
       ignored_stdout, ignored_stderr, ignored_status = Open3.capture3(
         { "COMMUNITY_FILES_ROOT" => root.to_s },
         "ruby",
@@ -1444,7 +1532,7 @@ class CommunityFilesValidatorTest < Minitest::Test
       assert ignored_status.success?, ignored_stderr
       ignored_count = ignored_stdout.match(/and (\d+) Markdown links\./)[1].to_i
 
-      readme.write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         Secure prose: https://example.com/support
         Uppercase secure prose: HTTPS://secure.example/support
         #{ignored_examples}
@@ -1541,7 +1629,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         > `code starts
         http://lazy-quote-code.example/support
         code ends`
@@ -1588,7 +1676,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         | A |
         | --- |
         | value |
@@ -1670,7 +1758,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         <div>
         http://raw-html-block.example/support
         </div>
@@ -1690,7 +1778,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         # Finished heading
             http://after-heading.example/support
       MARKDOWN
@@ -1709,7 +1797,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         -     http://list-indented.example/support
         1.     http://ordered-indented.example/support
       MARKDOWN
@@ -1728,7 +1816,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         `code starts
         2. http://ordered-noninterrupt.example/support
         code ends`
@@ -1748,7 +1836,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      root.join("README.md").write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         <script
         http://script-block.example/support
         </script>
@@ -1886,7 +1974,7 @@ class CommunityFilesValidatorTest < Minitest::Test
         "Relative link escapes repository in README.md: ../outside.md"
       assert_includes stderr, "Broken relative link in README.md: missing.md"
 
-      readme.write(<<~MARKDOWN)
+      write_readme_fixture(root, <<~MARKDOWN)
         <a data-href="http://ignored.example" href="https://example.com/support">Secure support</a>
       MARKDOWN
 
@@ -1925,8 +2013,7 @@ class CommunityFilesValidatorTest < Minitest::Test
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
       copy_profile_files(root)
-      readme = root.join("README.md")
-      readme.write("[Support](https://example.com/support)\n")
+      write_readme_fixture(root, "[Support](https://example.com/support)\n")
 
       plain_stdout, plain_stderr, plain_status = Open3.capture3(
         { "COMMUNITY_FILES_ROOT" => root.to_s },
@@ -1936,7 +2023,7 @@ class CommunityFilesValidatorTest < Minitest::Test
 
       assert plain_status.success?, plain_stderr
 
-      readme.write("[Support](<https://example.com/support>)\n")
+      write_readme_fixture(root, "[Support](<https://example.com/support>)\n")
       angle_stdout, angle_stderr, angle_status = Open3.capture3(
         { "COMMUNITY_FILES_ROOT" => root.to_s },
         "ruby",
@@ -2053,6 +2140,14 @@ class CommunityFilesValidatorTest < Minitest::Test
   end
 
   private
+
+  def write_readme_fixture(root, contents)
+    source = REPOSITORY_ROOT.join("README.md").read
+    identifiers = source[/## Current Proof Layer Identifiers\n\n.*?(?=\n## )/m]
+    raise "Public identifier fixture section is missing" unless identifiers
+
+    root.join("README.md").write("#{contents.rstrip}\n\n#{identifiers}\n")
+  end
 
   def copy_profile_files(destination)
     %w[
