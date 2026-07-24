@@ -1335,7 +1335,8 @@ markdown_files.each do |path|
       recipient = decoded_recipient.strip
       if recipient.empty?
         errors << "Mail link needs a recipient in #{relative_path}: #{target}"
-      elsif decoded_recipient.match?(/[[:cntrl:]]/)
+      elsif decoded_recipient.match?(/[[:cntrl:]]/) ||
+            decoded_recipient.match?(/[[:space:]]/)
         errors << "Mail link has an invalid recipient in #{relative_path}: #{target}"
       end
       next
