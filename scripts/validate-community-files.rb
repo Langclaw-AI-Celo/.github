@@ -754,6 +754,12 @@ rescue URI::InvalidComponentError
   false
 end
 
+def valid_mailto_recipient_list?(value)
+  value.split(",", -1).all? do |recipient|
+    URI::MailTo::EMAIL_REGEXP.match?(recipient)
+  end
+end
+
 errors = []
 
 REQUIRED_FILES.each do |relative_path|
@@ -1337,6 +1343,8 @@ markdown_files.each do |path|
         errors << "Mail link needs a recipient in #{relative_path}: #{target}"
       elsif decoded_recipient.match?(/[[:cntrl:]]/) ||
             decoded_recipient.match?(/[[:space:]]/)
+        errors << "Mail link has an invalid recipient in #{relative_path}: #{target}"
+      elsif !valid_mailto_recipient_list?(decoded_recipient)
         errors << "Mail link has an invalid recipient in #{relative_path}: #{target}"
       end
       next
