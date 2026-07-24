@@ -960,6 +960,33 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_percent_encoded_equivalent_contact_link_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Encoded wallet support
+            url: https://example.com/%7Ewallet
+            about: Ask a wallet question.
+          - name: Plain wallet support
+            url: https://example.com/~wallet
+            about: Browse the same wallet support page.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template contact link 2 repeats URL https://example.com/~wallet"
+    end
+  end
+
   def test_allows_distinct_normalized_contact_link_urls
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
