@@ -749,7 +749,7 @@ rescue SystemCallError
 end
 
 def uri_port_in_range?(uri)
-  uri.port.between?(0, 65_535)
+  uri.port.between?(1, 65_535)
 rescue URI::InvalidComponentError
   false
 end
