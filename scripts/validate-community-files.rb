@@ -1343,7 +1343,7 @@ markdown_files.each do |path|
       next
     end
 
-    file_target = URI::DEFAULT_PARSER.unescape(target.split("#", 2).first)
+    file_target = URI::DEFAULT_PARSER.unescape(target.split(/[?#]/, 2).first)
     if file_target.include?("\0")
       errors << "Invalid link in #{relative_path}: #{target}"
       next
