@@ -925,6 +925,75 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_equivalent_contact_link_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Primary support
+            url: https://EXAMPLE.com:443/support
+            about: Ask a support question.
+          - name: Backup support
+            url: https://example.com/support
+            about: Browse common answers.
+          - name: Primary docs
+            url: https://docs.example.com
+            about: Read the primary documentation.
+          - name: Backup docs
+            url: https://docs.example.com/
+            about: Read the backup documentation.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template contact link 2 repeats URL https://example.com/support"
+      assert_includes stderr,
+        "Issue template contact link 4 repeats URL https://docs.example.com/"
+    end
+  end
+
+  def test_allows_distinct_normalized_contact_link_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Support path
+            url: https://example.com/support
+            about: Ask a support question.
+          - name: Documentation path
+            url: https://example.com/docs
+            about: Read the documentation.
+          - name: Support query
+            url: https://example.com/support?topic=wallet
+            about: Ask a wallet question.
+          - name: Support fragment
+            url: https://example.com/support#before-posting
+            about: Read the posting guide.
+          - name: Support alternate port
+            url: https://example.com:8443/support
+            about: Use the alternate support service.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_allows_omitted_issue_form_ids
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)

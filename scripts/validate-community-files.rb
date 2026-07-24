@@ -1259,10 +1259,11 @@ if issue_template_config.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
     else
       errors << "Issue template contact link #{index + 1} URL must not include user information" if uri.userinfo
-      if seen_contact_link_urls[url]
+      normalized_url = uri.normalize.to_s
+      if seen_contact_link_urls[normalized_url]
         errors << "Issue template contact link #{index + 1} repeats URL #{url}"
       end
-      seen_contact_link_urls[url] = true
+      seen_contact_link_urls[normalized_url] = true
     end
   end
 elsif ROOT.join(".github/ISSUE_TEMPLATE/config.yml").file?
