@@ -2324,6 +2324,34 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_control_characters_in_mailto_recipients
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      targets = [
+        "mailto:%0Asecurity@example.com",
+        "mailto:security@example.com%0Abcc:attacker@example.com",
+        "mailto:security@example.com%0D",
+        "mailto:security@example.com%00",
+        "mailto:security@example.com%7F"
+      ]
+
+      targets.each do |target|
+        write_readme_fixture(root, "[Security](#{target})\n")
+
+        _stdout, stderr, status = Open3.capture3(
+          { "COMMUNITY_FILES_ROOT" => root.to_s },
+          "ruby",
+          VALIDATOR.to_s
+        )
+
+        refute status.success?, target
+        assert_includes stderr,
+          "Mail link has an invalid recipient in README.md: #{target}"
+      end
+    end
+  end
+
   def test_treats_mailto_schemes_case_insensitively
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
