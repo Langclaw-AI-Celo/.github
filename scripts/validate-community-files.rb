@@ -1331,9 +1331,12 @@ markdown_files.each do |path|
 
     if target.match?(/\Amailto:/i)
       raw_recipient = target.sub(/\Amailto:/i, "").partition("?").first
-      recipient = URI::DEFAULT_PARSER.unescape(raw_recipient).strip
+      decoded_recipient = URI::DEFAULT_PARSER.unescape(raw_recipient)
+      recipient = decoded_recipient.strip
       if recipient.empty?
         errors << "Mail link needs a recipient in #{relative_path}: #{target}"
+      elsif decoded_recipient.match?(/[[:cntrl:]]/)
+        errors << "Mail link has an invalid recipient in #{relative_path}: #{target}"
       end
       next
     end
