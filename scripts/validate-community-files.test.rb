@@ -1146,6 +1146,66 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_validates_relative_link_path_without_its_query
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      write_readme_fixture(
+        root,
+        "[Support](SUPPORT.md?plain=1#where-to-ask)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
+  def test_reports_broken_relative_link_with_its_query
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      write_readme_fixture(
+        root,
+        "[Missing](missing.md?plain=1#details)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Broken relative link in README.md: missing.md?plain=1#details"
+    end
+  end
+
+  def test_preserves_encoded_question_marks_in_relative_link_paths
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join("guide?copy.md").write("Guide copy.\n")
+      write_readme_fixture(
+        root,
+        "[Guide](guide%3Fcopy.md?plain=1)\n"
+      )
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      assert status.success?, stderr
+    end
+  end
+
   def test_reports_percent_encoded_null_bytes_as_invalid_links
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
