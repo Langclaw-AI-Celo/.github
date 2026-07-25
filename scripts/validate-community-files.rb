@@ -754,6 +754,29 @@ rescue URI::InvalidComponentError
   false
 end
 
+def normalize_percent_encoded_unreserved(value)
+  value.to_s.gsub(/%([0-9a-fA-F]{2})/) do
+    encoded_byte = Regexp.last_match(1)
+    byte = encoded_byte.to_i(16)
+    character = byte.chr
+
+    if character.match?(/[A-Za-z0-9\-._~]/)
+      character
+    else
+      "%#{encoded_byte.upcase}"
+    end
+  end
+end
+
+def normalized_contact_link_url(uri)
+  normalized = uri.normalize
+  normalized.host = normalize_percent_encoded_unreserved(normalized.host).downcase
+  normalized.path = normalize_percent_encoded_unreserved(normalized.path)
+  normalized.query = normalize_percent_encoded_unreserved(normalized.query) if normalized.query
+  normalized.fragment = normalize_percent_encoded_unreserved(normalized.fragment) if normalized.fragment
+  normalized.to_s
+end
+
 def valid_mailto_recipient_list?(value)
   value.split(",", -1).all? do |recipient|
     URI::MailTo::EMAIL_REGEXP.match?(recipient)
@@ -1259,7 +1282,7 @@ if issue_template_config.is_a?(Hash)
       errors << "Issue template contact link #{index + 1} needs an HTTPS URL"
     else
       errors << "Issue template contact link #{index + 1} URL must not include user information" if uri.userinfo
-      normalized_url = uri.normalize.to_s
+      normalized_url = normalized_contact_link_url(uri)
       if seen_contact_link_urls[normalized_url]
         errors << "Issue template contact link #{index + 1} repeats URL #{url}"
       end
