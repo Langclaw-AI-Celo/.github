@@ -768,10 +768,43 @@ def normalize_percent_encoded_unreserved(value)
   end
 end
 
+def remove_url_dot_segments(path)
+  input = path.dup
+  output = +""
+
+  until input.empty?
+    if input.start_with?("../")
+      input = input.delete_prefix("../")
+    elsif input.start_with?("./")
+      input = input.delete_prefix("./")
+    elsif input.start_with?("/./")
+      input = input[2..]
+    elsif input == "/."
+      input = "/"
+    elsif input.start_with?("/../")
+      input = input[3..]
+      output = output.sub(%r{/?[^/]*\z}, "")
+    elsif input == "/.."
+      input = "/"
+      output = output.sub(%r{/?[^/]*\z}, "")
+    elsif input == "." || input == ".."
+      input = ""
+    else
+      segment = input.match(%r{\A/?[^/]*})[0]
+      output << segment
+      input = input[segment.length..]
+    end
+  end
+
+  output
+end
+
 def normalized_contact_link_url(uri)
   normalized = uri.normalize
   normalized.host = normalize_percent_encoded_unreserved(normalized.host).downcase
-  normalized.path = normalize_percent_encoded_unreserved(normalized.path)
+  normalized.path = remove_url_dot_segments(
+    normalize_percent_encoded_unreserved(normalized.path)
+  )
   normalized.query = normalize_percent_encoded_unreserved(normalized.query) if normalized.query
   normalized.fragment = normalize_percent_encoded_unreserved(normalized.fragment) if normalized.fragment
   normalized.to_s

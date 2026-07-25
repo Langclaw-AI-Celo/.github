@@ -1014,6 +1014,38 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_dot_segment_equivalent_contact_link_urls
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Relative support
+            url: https://example.com/help/../support
+            about: Ask a support question.
+          - name: Direct support
+            url: https://example.com/support
+            about: Browse the same support page.
+          - name: Encoded relative support
+            url: https://example.com/help/%2E%2E/support
+            about: Open the encoded form of the same page.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template contact link 2 repeats URL https://example.com/support"
+      assert_includes stderr,
+        "Issue template contact link 3 repeats URL https://example.com/help/%2E%2E/support"
+    end
+  end
+
   def test_allows_distinct_normalized_contact_link_urls
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
@@ -1036,6 +1068,12 @@ class CommunityFilesValidatorTest < Minitest::Test
           - name: Support alternate port
             url: https://example.com:8443/support
             about: Use the alternate support service.
+          - name: Repeated slash support
+            url: https://example.com//support
+            about: Use a distinct repeated-slash path.
+          - name: Trailing slash support
+            url: https://example.com/support/
+            about: Use a distinct trailing-slash path.
       YAML
 
       _stdout, stderr, status = Open3.capture3(
