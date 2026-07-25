@@ -770,6 +770,7 @@ end
 
 def normalized_contact_link_url(uri)
   normalized = uri.normalize
+  normalized.host = normalize_percent_encoded_unreserved(normalized.host).downcase
   normalized.path = normalize_percent_encoded_unreserved(normalized.path)
   normalized.query = normalize_percent_encoded_unreserved(normalized.query) if normalized.query
   normalized.fragment = normalize_percent_encoded_unreserved(normalized.fragment) if normalized.fragment

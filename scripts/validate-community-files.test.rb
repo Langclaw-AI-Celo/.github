@@ -987,6 +987,33 @@ class CommunityFilesValidatorTest < Minitest::Test
     end
   end
 
+  def test_rejects_percent_encoded_equivalent_contact_link_hosts
+    Dir.mktmpdir("community-files") do |directory|
+      root = Pathname(directory)
+      copy_profile_files(root)
+      root.join(".github/ISSUE_TEMPLATE/config.yml").write(<<~YAML)
+        blank_issues_enabled: false
+        contact_links:
+          - name: Encoded host support
+            url: https://ex%61mple.com/support
+            about: Ask a support question.
+          - name: Plain host support
+            url: https://example.com/support
+            about: Browse the same support page.
+      YAML
+
+      _stdout, stderr, status = Open3.capture3(
+        { "COMMUNITY_FILES_ROOT" => root.to_s },
+        "ruby",
+        VALIDATOR.to_s
+      )
+
+      refute status.success?
+      assert_includes stderr,
+        "Issue template contact link 2 repeats URL https://example.com/support"
+    end
+  end
+
   def test_allows_distinct_normalized_contact_link_urls
     Dir.mktmpdir("community-files") do |directory|
       root = Pathname(directory)
